@@ -4,7 +4,7 @@ export function BrandLogo({ size = 40, showText = true, className = "" }) {
   return (
     <div className={`brand-logo d-flex align-items-center gap-2 ${className}`}>
       <img
-        src="/logo.png"
+        src={`${import.meta.env.BASE_URL}logo.png`}
         alt={BRAND_NAME}
         width={size}
         height={size}
