@@ -3,7 +3,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # .env must exist in the build context (see .env.example) — Vite bakes
 # VITE_* values into the bundle at build time, not at container runtime.
