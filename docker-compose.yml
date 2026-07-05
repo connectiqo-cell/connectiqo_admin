@@ -1,0 +1,7 @@
+services:
+  connectiqo-admin:
+    build: .
+    container_name: connectiqo-admin
+    ports:
+      - "3003:3003"
+    restart: unless-stopped
