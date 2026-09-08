@@ -7,7 +7,7 @@ import { ToastProvider } from "./ToastProvider.jsx";
 
 export function AppProviders({ children }) {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
+    <BrowserRouter>
       <ThemeProvider>
         <EnvironmentProvider>
           <AuthProvider>

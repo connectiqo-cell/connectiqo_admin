@@ -9,7 +9,7 @@ export const NAV_GROUPS = [
     label: "People",
     items: [
       { to: "/users", label: "Profiles", icon: "people" },
-      { to: "/mentor-profiles", label: "Mentor profiles", icon: "school" },
+      { to: "/reports", label: "Profile reports", icon: "flag" },
       { to: "/bookings", label: "Bookings", icon: "event" },
     ],
   },
@@ -18,6 +18,7 @@ export const NAV_GROUPS = [
     label: "Commerce",
     items: [
       { to: "/payments", label: "Payments", icon: "payments" },
+      { to: "/withdrawals", label: "Withdrawals", icon: "account_balance_wallet" },
       { to: "/platform-fees", label: "Platform fees", icon: "percent" },
     ],
   },
@@ -33,6 +34,7 @@ export const NAV_GROUPS = [
     id: "media",
     label: "Media",
     items: [
+      { to: "/videos", label: "Uploaded videos", icon: "movie" },
       { to: "/sessions", label: "Sessions", icon: "videocam" },
       { to: "/recordings", label: "Recordings", icon: "fiber_manual_record" },
     ],

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
+import { HScroll } from "../../components/common/HScroll.jsx";
 import { NAV_ITEMS } from "../../utils/navigation.js";
 import { listDashboardStats, listVideoSdkOverview } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
@@ -9,7 +10,7 @@ import { useAuth } from "../../app/providers/AuthProvider.jsx";
 const PLATFORM_KPIS = [
   { label: "Total Users", key: "usersCount", icon: "people", to: "/users", hint: "Learner & user profiles" },
   { label: "Bookings", key: "bookingsCount", icon: "event", to: "/bookings", hint: "All booking records" },
-  { label: "Mentors", key: "mentorsCount", icon: "school", to: "/mentor-profiles", hint: "Active mentor profiles" },
+  { label: "Mentors", key: "mentorsCount", icon: "school", to: "/users", hint: "Mentor profiles (open Profiles)" },
 ];
 
 const VIDEO_KPIS = [
@@ -19,8 +20,10 @@ const VIDEO_KPIS = [
 
 const QUICK_ACTIONS = [
   { to: "/users", label: "Manage Profiles", icon: "people", desc: "View & edit user accounts" },
+  { to: "/reports", label: "Profile reports", icon: "flag", desc: "Review user-submitted reports" },
   { to: "/bookings", label: "Bookings", icon: "event", desc: "Sessions & scheduling" },
   { to: "/payments", label: "Payments", icon: "payments", desc: "Transactions & wallets" },
+  { to: "/withdrawals", label: "Withdrawals", icon: "account_balance_wallet", desc: "Payout queue & fulfilment" },
   { to: "/database", label: "Database", icon: "storage", desc: "Direct table access" },
   { to: "/hero-slides", label: "Hero Slides", icon: "view_carousel", desc: "Homepage carousel" },
   { to: "/audit-logs", label: "Audit Logs", icon: "history", desc: "Admin activity trail" },
@@ -96,18 +99,26 @@ export function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    try {
-      const [dbStats, sdkStats] = await Promise.all([
-        listDashboardStats(config),
-        listVideoSdkOverview(config),
-      ]);
-      setStats(dbStats);
-      setVideoStats(sdkStats);
-    } catch (err) {
-      setError(err.message || "Failed to load dashboard data");
-    } finally {
-      setLoading(false);
+    const [dbResult, sdkResult] = await Promise.allSettled([
+      listDashboardStats(config),
+      listVideoSdkOverview(config),
+    ]);
+
+    const errors = [];
+    if (dbResult.status === "fulfilled") {
+      setStats(dbResult.value);
+    } else {
+      errors.push(`Database: ${dbResult.reason?.message || "Failed to load database counts"}`);
     }
+
+    if (sdkResult.status === "fulfilled") {
+      setVideoStats(sdkResult.value);
+    } else {
+      errors.push(`Video services: ${sdkResult.reason?.message || "Failed to load VideoSDK data"}`);
+    }
+
+    setError(errors.join(" | "));
+    setLoading(false);
   }, [config]);
 
   useEffect(() => {
@@ -169,7 +180,7 @@ export function DashboardPage() {
           aria-label="Search admin pages"
         />
         {navMatches.length ? (
-          <div className="dashboard-nav-matches mb-3 d-flex flex-wrap gap-2">
+          <HScroll className="dashboard-nav-matches mb-3">
             {navMatches.map((item) => (
               <button
                 key={item.to}
@@ -186,7 +197,7 @@ export function DashboardPage() {
                 {item.label}
               </button>
             ))}
-          </div>
+          </HScroll>
         ) : null}
         <div className="d-flex flex-wrap align-items-start justify-content-between gap-3">
           <div className="d-flex align-items-start gap-3">
@@ -196,9 +207,9 @@ export function DashboardPage() {
             <div>
               <p className="dashboard-hero__eyebrow mb-1">{getGreeting()}</p>
               <h4 className="mb-1">
-                {session?.user?.email ? (
+                {session?.email ? (
                   <>
-                    Welcome, <span className="dashboard-hero__name">{session.user.email.split("@")[0]}</span>
+                    Welcome, <span className="dashboard-hero__name">{session.email.split("@")[0]}</span>
                   </>
                 ) : (
                   "Admin Overview"

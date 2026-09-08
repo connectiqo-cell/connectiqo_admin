@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+import gsap from "gsap";
 import { getRecordingFileUrl, getRecordingMediaType } from "../../utils/recording.js";
 
 export function RecordingPlayerModal({ open, recording, onClose }) {
+  const [isRendered, setIsRendered] = useState(open);
   const [playbackError, setPlaybackError] = useState("");
-  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open);
+  const backdropRef = useRef(null);
+  const dialogRef = useRef(null);
   const mediaRef = useRef(null);
 
   const fileUrl = getRecordingFileUrl(recording);
   const mediaType = getRecordingMediaType(recording);
   const isAudio = mediaType === "audio";
+
+  useEffect(() => {
+    if (open) setIsRendered(true);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -21,6 +27,30 @@ export function RecordingPlayerModal({ open, recording, onClose }) {
       }
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!isRendered) return;
+    const backdrop = backdropRef.current;
+    const dialog = dialogRef.current;
+    if (!backdrop || !dialog) return;
+
+    if (open) {
+      gsap.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: "power2.out" });
+      gsap.fromTo(
+        dialog,
+        { opacity: 0, y: 24, scale: 0.965 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: "power3.out" }
+      );
+    } else {
+      gsap.to(dialog, { opacity: 0, y: 14, scale: 0.98, duration: 0.2, ease: "power2.in" });
+      gsap.to(backdrop, {
+        opacity: 0,
+        duration: 0.18,
+        ease: "power2.in",
+        onComplete: () => setIsRendered(false),
+      });
+    }
+  }, [open, isRendered]);
 
   if (!isRendered) return null;
 

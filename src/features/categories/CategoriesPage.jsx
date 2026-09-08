@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import gsap from "gsap";
 import {
   createTableRow,
   deleteTableRow,
@@ -7,11 +8,9 @@ import {
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
-import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
-import { useModalAnimation } from "../../hooks/useModalAnimation.js";
 
 // ─── Slug helper ────────────────────────────────────────────────────────────
 const toSlug = (name) =>
@@ -180,7 +179,9 @@ const EMPTY_FORM = { name: "", slug: "", icon: "category", sort_order: 0, is_act
 function CategoryModal({ open, title, initialValue, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [slugManual, setSlugManual] = useState(false);
-  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open);
+  const [isRendered, setIsRendered] = useState(open);
+  const backdropRef = useRef(null);
+  const dialogRef   = useRef(null);
 
   useEffect(() => {
     if (initialValue) {
@@ -191,6 +192,21 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
       setSlugManual(false);
     }
   }, [initialValue, open]);
+
+  useEffect(() => { if (open) setIsRendered(true); }, [open]);
+
+  useEffect(() => {
+    if (!isRendered) return;
+    const b = backdropRef.current, d = dialogRef.current;
+    if (!b || !d) return;
+    if (open) {
+      gsap.fromTo(b, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: "power2.out" });
+      gsap.fromTo(d, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: "power3.out" });
+    } else {
+      gsap.to(d, { opacity: 0, y: 16, scale: 0.975, duration: 0.22, ease: "power2.in" });
+      gsap.to(b, { opacity: 0, duration: 0.2, ease: "power2.in", onComplete: () => setIsRendered(false) });
+    }
+  }, [open, isRendered]);
 
   if (!isRendered) return null;
 
@@ -288,9 +304,8 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function CategoriesPage() {
-  const { config, environment } = useEnvironment();
+  const { config } = useEnvironment();
   const { addToast } = useToast();
-  const { addLog } = useAudit();
 
   const [rows, setRows]         = useState([]);
   const [count, setCount]       = useState(0);
@@ -326,13 +341,11 @@ export function CategoriesPage() {
     try {
       const { id, created_at, ...payload } = form;
       if (editRow?.id) {
-        const updated = await updateTableRow(config, "mentor_categories", editRow.id, payload);
-        addLog({ action: "UPDATE", entity: "mentor_categories", environment, payload: updated });
+        await updateTableRow(config, "mentor_categories", editRow.id, payload);
         addToast(`"${payload.name}" updated`);
         setEditRow(null);
       } else {
-        const created = await createTableRow(config, "mentor_categories", payload);
-        addLog({ action: "CREATE", entity: "mentor_categories", environment, payload: created });
+        await createTableRow(config, "mentor_categories", payload);
         addToast(`"${payload.name}" created`);
         setCreateOpen(false);
       }
@@ -345,7 +358,6 @@ export function CategoriesPage() {
   const handleDelete = async () => {
     try {
       await deleteTableRow(config, "mentor_categories", deleteRow.id);
-      addLog({ action: "DELETE", entity: "mentor_categories", environment, payload: deleteRow });
       addToast(`"${deleteRow.name}" deleted`);
       setDeleteRow(null);
       await load();
@@ -356,8 +368,7 @@ export function CategoriesPage() {
 
   const toggleActive = async (row) => {
     try {
-      const updated = await updateTableRow(config, "mentor_categories", row.id, { is_active: !row.is_active });
-      addLog({ action: "UPDATE", entity: "mentor_categories", environment, payload: updated });
+      await updateTableRow(config, "mentor_categories", row.id, { is_active: !row.is_active });
       addToast(`"${row.name}" ${!row.is_active ? "activated" : "deactivated"}`);
       await load();
     } catch (err) {

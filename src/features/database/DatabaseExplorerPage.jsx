@@ -1,37 +1,41 @@
 import { useMemo, useState } from "react";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
-import { ALLOWED_TABLES } from "../../services/adminApi.js";
+import { HScroll } from "../../components/common/HScroll.jsx";
 
-const SELECTABLE_TABLES = [...ALLOWED_TABLES].sort();
+const SUGGESTED_TABLES = [
+  "profiles",
+  "bookings",
+  "mentor_profiles",
+  "user_reports",
+  "availability_slots",
+  "mentor_wallets",
+  "wallet_transactions",
+];
 
 export function DatabaseExplorerPage() {
-  const [query, setQuery] = useState("");
   const [tableName, setTableName] = useState("profiles");
 
   const visibleTables = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return SELECTABLE_TABLES;
-    return SELECTABLE_TABLES.filter((t) => t.toLowerCase().includes(q));
-  }, [query]);
-
-  const isAllowed = ALLOWED_TABLES.has(tableName);
+    const q = tableName.trim().toLowerCase();
+    if (!q) return SUGGESTED_TABLES;
+    return SUGGESTED_TABLES.filter((t) => t.toLowerCase().includes(q));
+  }, [tableName]);
 
   return (
     <div className="d-grid gap-3">
       <div className="admin-card p-3 p-md-4">
         <h4 className="mb-2">Database Explorer</h4>
         <p className="text-muted small mb-3">
-          Only tables on the allow-list below can be opened here — this is enforced,
-          not just a suggestion.
+          Full table-level access. Type a table name or pick a shortcut below.
         </p>
         <SearchBar
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search allowed tables…"
-          aria-label="Search tables"
+          value={tableName}
+          onChange={(e) => setTableName(e.target.value)}
+          placeholder="Search or enter table name…"
+          aria-label="Table name"
         />
-        <div className="d-flex flex-wrap gap-2 mt-3">
+        <HScroll className="mt-3">
           {visibleTables.map((table) => (
             <button
               key={table}
@@ -43,22 +47,16 @@ export function DatabaseExplorerPage() {
             </button>
           ))}
           {!visibleTables.length ? (
-            <span className="text-muted small align-self-center">No allowed tables match.</span>
+            <span className="text-muted small align-self-center">No suggested tables match.</span>
           ) : null}
-        </div>
+        </HScroll>
       </div>
 
-      {isAllowed ? (
-        <ResourceCrudPage
-          title={`Table: ${tableName}`}
-          tableName={tableName}
-          description="Direct CRUD access to selected Supabase table."
-        />
-      ) : (
-        <div className="alert alert-danger mb-0">
-          "{tableName}" is not on the allow-list and cannot be opened here.
-        </div>
-      )}
+      <ResourceCrudPage
+        title={`Table: ${tableName}`}
+        tableName={tableName}
+        description="Direct CRUD access to selected Supabase table."
+      />
     </div>
   );
 }

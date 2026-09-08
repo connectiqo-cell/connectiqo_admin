@@ -6,16 +6,14 @@ import {
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
-import { useAudit } from "../../app/providers/AuditProvider.jsx";
 
 function fmt(value) {
   return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(value) || 0)}`;
 }
 
 export function PlatformFeesPage() {
-  const { config, environment } = useEnvironment();
+  const { config } = useEnvironment();
   const { addToast } = useToast();
-  const { addLog } = useAudit();
 
   const [globalRule, setGlobalRule]   = useState(null);
   const [loading, setLoading]         = useState(false);
@@ -59,12 +57,10 @@ export function PlatformFeesPage() {
         notes: "Global default",
       };
       if (globalRule?.id) {
-        const updated = await updateTableRow(config, "platform_fee_rules", globalRule.id, payload);
-        addLog({ action: "UPDATE", entity: "platform_fee_rules", environment, payload: updated });
+        await updateTableRow(config, "platform_fee_rules", globalRule.id, payload);
         addToast("Platform fees updated");
       } else {
-        const created = await createTableRow(config, "platform_fee_rules", payload);
-        addLog({ action: "CREATE", entity: "platform_fee_rules", environment, payload: created });
+        await createTableRow(config, "platform_fee_rules", payload);
         addToast("Platform fee rule created");
       }
       await load();

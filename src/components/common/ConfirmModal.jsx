@@ -1,4 +1,5 @@
-import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
 
 export function ConfirmModal({
   title = "Confirm action",
@@ -9,7 +10,49 @@ export function ConfirmModal({
   confirmText = "Confirm",
   variant = "danger",
 }) {
-  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open);
+  const [isRendered, setIsRendered] = useState(open);
+  const backdropRef = useRef(null);
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setIsRendered(true);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!isRendered) return;
+    const backdrop = backdropRef.current;
+    const dialog = dialogRef.current;
+    if (!backdrop || !dialog) return;
+
+    if (open) {
+      gsap.fromTo(
+        backdrop,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.22, ease: "power2.out" }
+      );
+      gsap.fromTo(
+        dialog,
+        { opacity: 0, y: 28, scale: 0.96 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "power3.out" }
+      );
+    } else {
+      gsap.to(dialog, {
+        opacity: 0,
+        y: 18,
+        scale: 0.97,
+        duration: 0.22,
+        ease: "power2.in",
+      });
+      gsap.to(backdrop, {
+        opacity: 0,
+        duration: 0.2,
+        ease: "power2.in",
+        onComplete: () => setIsRendered(false),
+      });
+    }
+  }, [open, isRendered]);
 
   if (!isRendered) return null;
 
@@ -22,7 +65,7 @@ export function ConfirmModal({
             <button type="button" className="btn-close" onClick={onCancel} />
           </div>
           <div className="modal-body">
-            <p className="mb-0">{body}</p>
+            <div className="mb-0">{body}</div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onCancel}>

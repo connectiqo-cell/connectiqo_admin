@@ -11,7 +11,6 @@ import {
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
-import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
@@ -179,9 +178,8 @@ function UploadZone({ onUpload, uploading }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function HeroSlidesPage() {
-  const { config, environment } = useEnvironment();
+  const { config } = useEnvironment();
   const { addToast } = useToast();
-  const { addLog } = useAudit();
 
   const [slides, setSlides]       = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -215,13 +213,12 @@ export function HeroSlidesPage() {
     setUploading(true);
     try {
       const { publicUrl, storagePath } = await uploadHeroSlide(config, file);
-      const created = await createTableRow(config, "hero_slides", {
+      await createTableRow(config, "hero_slides", {
         image_url: publicUrl,
         storage_path: storagePath,
         position,
         is_active: true,
       });
-      addLog({ action: "CREATE", entity: "hero_slides", environment, payload: created });
       addToast("Slide uploaded successfully");
       await load();
     } catch (err) {
@@ -233,8 +230,7 @@ export function HeroSlidesPage() {
 
   const handleEdit = async (updates) => {
     try {
-      const updated = await updateTableRow(config, "hero_slides", editSlide.id, updates);
-      addLog({ action: "UPDATE", entity: "hero_slides", environment, payload: updated });
+      await updateTableRow(config, "hero_slides", editSlide.id, updates);
       addToast("Slide updated");
       setEditSlide(null);
       await load();
@@ -247,7 +243,6 @@ export function HeroSlidesPage() {
     try {
       await deleteTableRow(config, "hero_slides", deleteSlide.id);
       await deleteHeroSlideStorage(config, deleteSlide.storage_path);
-      addLog({ action: "DELETE", entity: "hero_slides", environment, payload: deleteSlide });
       addToast("Slide deleted");
       setDeleteSlide(null);
       await load();
@@ -258,8 +253,7 @@ export function HeroSlidesPage() {
 
   const toggleActive = async (slide) => {
     try {
-      const updated = await updateTableRow(config, "hero_slides", slide.id, { is_active: !slide.is_active });
-      addLog({ action: "UPDATE", entity: "hero_slides", environment, payload: updated });
+      await updateTableRow(config, "hero_slides", slide.id, { is_active: !slide.is_active });
       addToast(slide.is_active ? "Slide hidden" : "Slide activated");
       await load();
     } catch (err) {

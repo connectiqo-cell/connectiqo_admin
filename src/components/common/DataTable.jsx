@@ -1,4 +1,15 @@
-export function DataTable({ rows, onView, onEdit, onDelete, visibleColumns, renderExtraActions, sortCol, sortDir, onSort }) {
+export function DataTable({
+  rows,
+  onView,
+  onEdit,
+  onDelete,
+  visibleColumns,
+  columnLabels,
+  renderExtraActions,
+  sortCol,
+  sortDir,
+  onSort,
+}) {
   if (!rows?.length) {
     return (
       <div className="table-empty">
@@ -10,69 +21,119 @@ export function DataTable({ rows, onView, onEdit, onDelete, visibleColumns, rend
   }
 
   const inferredColumns = Object.keys(rows[0]);
-  const columns = Array.isArray(visibleColumns) && visibleColumns.length
-    ? visibleColumns
-    : inferredColumns;
+  const columns =
+    Array.isArray(visibleColumns) && visibleColumns.length ? visibleColumns : inferredColumns;
 
-  const hasView    = typeof onView === "function";
-  const hasEdit    = typeof onEdit === "function";
-  const hasDelete  = typeof onDelete === "function";
-  const hasExtras  = typeof renderExtraActions === "function";
+  const hasView = typeof onView === "function";
+  const hasEdit = typeof onEdit === "function";
+  const hasDelete = typeof onDelete === "function";
+  const hasExtras = typeof renderExtraActions === "function";
   const hasActions = hasView || hasEdit || hasDelete || hasExtras;
   const hasSorting = typeof onSort === "function";
+
+  const labelFor = (column) =>
+    (columnLabels && columnLabels[column]) ||
+    String(column)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
 
   const handleSort = (col) => {
     if (!hasSorting) return;
     onSort(col);
   };
 
+  const formatCell = (raw) => {
+    if (raw === null || raw === undefined) {
+      return <span className="text-muted">—</span>;
+    }
+    if (typeof raw === "boolean") {
+      return raw ? (
+        <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">Yes</span>
+      ) : (
+        <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">No</span>
+      );
+    }
+    if (typeof raw === "object") {
+      return (
+        <span className="text-muted fst-italic" title={JSON.stringify(raw)}>
+          {"{…}"}
+        </span>
+      );
+    }
+    const str = String(raw);
+    if (str.length > 36) {
+      return (
+        <span title={str} style={{ cursor: "help" }}>
+          {str.slice(0, 32)}…
+        </span>
+      );
+    }
+    return str;
+  };
+
   return (
     <div className="table-wrap">
-      <table className="table table-sm table-hover align-middle">
+      <table className="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
             {columns.map((column) => (
               <th
                 key={column}
-                style={{ whiteSpace: "nowrap", cursor: hasSorting ? "pointer" : "default", userSelect: "none" }}
+                className={hasSorting ? "table-sortable-th" : undefined}
                 onClick={() => handleSort(column)}
               >
-                {column}
-                {hasSorting && (
-                  <span style={{ marginLeft: 5, opacity: sortCol === column ? 1 : 0.3, fontSize: "0.75rem" }}>
+                {labelFor(column)}
+                {hasSorting ? (
+                  <span className={`table-sort-icon${sortCol === column ? " is-active" : ""}`}>
                     {sortCol === column ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
                   </span>
-                )}
+                ) : null}
               </th>
             ))}
-            {hasActions ? <th style={{ width: hasExtras ? 280 : 200 }}>Actions</th> : null}
+            {hasActions ? <th className="table-actions-th">Actions</th> : null}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.id || index}>
-              {columns.map((column) => {
-                const raw = row[column];
-                let display;
-                if (raw === null || raw === undefined) {
-                  display = <span className="text-muted">—</span>;
-                } else if (typeof raw === "object") {
-                  display = <span className="text-muted fst-italic" title={JSON.stringify(raw)}>{"{…}"}</span>;
-                } else {
-                  const str = String(raw);
-                  display = str.length > 28
-                    ? <span title={str} style={{ cursor: "help" }}>{str.slice(0, 24)}…</span>
-                    : str;
-                }
-                return <td key={`${row.id || index}-${column}`}>{display}</td>;
-              })}
+              {columns.map((column) => (
+                <td key={`${row.id || index}-${column}`}>{formatCell(row[column])}</td>
+              ))}
               {hasActions ? (
                 <td>
-                  <div className="btn-group btn-group-sm">
-                    {hasView   ? <button className="btn btn-outline-secondary" onClick={() => onView(row)}>View</button>   : null}
-                    {hasEdit   ? <button className="btn btn-outline-primary"   onClick={() => onEdit(row)}>Edit</button>   : null}
-                    {hasDelete ? <button className="btn btn-outline-danger"    onClick={() => onDelete(row)}>Delete</button> : null}
-                    {hasExtras ? renderExtraActions(row) : null}
+                  <div className="table-row-actions">
+                    <div className="btn-group btn-group-sm">
+                      {hasView ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={() => onView(row)}
+                        >
+                          View
+                        </button>
+                      ) : null}
+                      {hasEdit ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary"
+                          onClick={() => onEdit(row)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {hasDelete ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-danger"
+                          onClick={() => onDelete(row)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                    {hasExtras ? (
+                      <div className="table-row-actions__extra">{renderExtraActions(row)}</div>
+                    ) : null}
                   </div>
                 </td>
               ) : null}

@@ -4,6 +4,7 @@ import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { listTableRows } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { TransactionControlPanel } from "./TransactionControlPanel.jsx";
+import { HScroll } from "../../components/common/HScroll.jsx";
 
 function transactionRupees(row) {
   const paise = row.amount_total_paise ?? row.amount_total;
@@ -23,7 +24,6 @@ const PAYMENT_RESOURCES = [
     filterFields: [
       { key: "status", label: "Status", options: ["all", "pending", "created", "initiated", "completed", "failed"] },
     ],
-    searchColumns: ["status", "admin_note"],
   },
   {
     id: "wallets",
@@ -31,8 +31,6 @@ const PAYMENT_RESOURCES = [
     tableName: "mentor_wallets",
     description: "Mentor balances, total earned, and withdrawals.",
     compactColumns: ["id", "balance", "total_earned", "total_withdrawn"],
-    // No real text columns to search server-side here — falls back to a
-    // clearly-labeled "this page only" client-side search.
   },
   {
     id: "earnings",
@@ -43,18 +41,6 @@ const PAYMENT_RESOURCES = [
     filterFields: [
       { key: "status", label: "Status", options: ["all", "pending", "unpaid", "paid"] },
     ],
-    searchColumns: ["status"],
-  },
-  {
-    id: "withdrawals",
-    label: "Withdrawals",
-    tableName: "withdrawal_requests",
-    description: "Mentor payout requests — view, edit status, add admin notes.",
-    compactColumns: ["mentor_id", "amount", "status", "admin_note"],
-    filterFields: [
-      { key: "status", label: "Status", options: ["all", "pending", "approved", "rejected"] },
-    ],
-    searchColumns: ["status", "admin_note"],
   },
 ];
 
@@ -200,10 +186,11 @@ export function PaymentsPage() {
       <div className="admin-card p-3">
         <h4 className="mb-2">Payments</h4>
         <p className="text-muted mb-3">
-          Manage transactions, wallets, earnings, and withdrawal requests. Use Control payments when the
-          Transactions tab is active.
+          Manage transactions, wallets, and earnings. Use Control payments when the Transactions
+          tab is active. Withdrawal fulfilment now has its own dedicated page — see Withdrawals
+          in the sidebar.
         </p>
-        <div className="d-flex flex-wrap gap-2">
+        <HScroll>
           {PAYMENT_RESOURCES.map((item) => (
             <button
               key={item.id}
@@ -213,7 +200,7 @@ export function PaymentsPage() {
               {item.label}
             </button>
           ))}
-        </div>
+        </HScroll>
       </div>
 
       <div className="admin-card p-3 p-md-4" ref={analysisRef}>
@@ -319,7 +306,6 @@ export function PaymentsPage() {
         description={config.description}
         compactColumns={config.compactColumns}
         filterFields={config.filterFields}
-        searchColumns={config.searchColumns}
       />
     </div>
   );

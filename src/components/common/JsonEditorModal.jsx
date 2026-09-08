@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+import { useEffect, useState, useRef } from "react";
+import gsap from "gsap";
 
 const READ_ONLY_KEYS = ["id", "created_at", "updated_at"];
 
@@ -71,7 +71,9 @@ export function JsonEditorModal({ open, title, initialValue, onClose, onSave }) 
   const [fields, setFields] = useState({});
   const [jsonText, setJsonText] = useState("{}");
   const [jsonError, setJsonError] = useState("");
-  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open);
+  const [isRendered, setIsRendered] = useState(open);
+  const backdropRef = useRef(null);
+  const dialogRef = useRef(null);
 
   const isFormMode = initialValue && Object.keys(initialValue).length > 0;
 
@@ -80,6 +82,25 @@ export function JsonEditorModal({ open, title, initialValue, onClose, onSave }) 
     setJsonText(JSON.stringify(initialValue || {}, null, 2));
     setJsonError("");
   }, [initialValue, open]);
+
+  useEffect(() => {
+    if (open) setIsRendered(true);
+  }, [open]);
+
+  useEffect(() => {
+    if (!isRendered) return;
+    const backdrop = backdropRef.current;
+    const dialog = dialogRef.current;
+    if (!backdrop || !dialog) return;
+
+    if (open) {
+      gsap.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: "power2.out" });
+      gsap.fromTo(dialog, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: "power3.out" });
+    } else {
+      gsap.to(dialog, { opacity: 0, y: 16, scale: 0.975, duration: 0.22, ease: "power2.in" });
+      gsap.to(backdrop, { opacity: 0, duration: 0.2, ease: "power2.in", onComplete: () => setIsRendered(false) });
+    }
+  }, [open, isRendered]);
 
   if (!isRendered) return null;
 

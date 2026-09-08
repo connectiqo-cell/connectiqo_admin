@@ -31,7 +31,7 @@ export function getSearchResultHint(filteredCount, totalCount, query) {
   const q = String(query || "").trim();
   if (!q) return null;
   if (filteredCount === totalCount) {
-    return `${filteredCount} match${filteredCount === 1 ? "" : "es"} on this loaded page only — other pages are not searched`;
+    return `${filteredCount} match${filteredCount === 1 ? "" : "es"} on this page`;
   }
-  return `${filteredCount} of ${totalCount} on this loaded page only — other pages are not searched`;
+  return `${filteredCount} of ${totalCount} on this page`;
 }
