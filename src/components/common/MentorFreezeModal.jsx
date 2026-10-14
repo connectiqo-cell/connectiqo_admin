@@ -67,7 +67,7 @@ export function MentorFreezeModal({
         <div className="modal-content">
           <div className="modal-header">
             <h5 className="modal-title">
-              {isActive ? "Mentor freeze" : "Freeze mentor"}
+              {isActive ? "Creator freeze" : "Freeze creator"}
             </h5>
             <button type="button" className="btn-close" onClick={onCancel} disabled={busy} />
           </div>
@@ -75,16 +75,16 @@ export function MentorFreezeModal({
             <p className="mb-2">
               {isActive ? (
                 <>
-                  <strong>{name}</strong> is currently frozen as a mentor
+                  <strong>{name}</strong> is currently frozen as a creator
                   {row.mentor_frozen_until
                     ? ` until ${new Date(row.mentor_frozen_until).toLocaleString()}`
                     : " indefinitely"}
-                  . Learner access stays open. Unfreeze to restore their mentor profile and videos.
+                  . They can still book sessions and watch videos. Unfreeze to restore their creator profile and videos.
                 </>
               ) : (
                 <>
-                  Freeze <strong>{name}</strong> as a mentor only. Their profile and videos will be
-                  hidden, unlocks pause, and mentor tools lock — they can still use learner features.
+                  Freeze <strong>{name}</strong> as a creator only. Their profile and videos will be
+                  hidden, unlocks pause, and creator tools lock — they can still book sessions and watch videos.
                 </>
               )}
             </p>
@@ -123,7 +123,7 @@ export function MentorFreezeModal({
                   rows={2}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Shown to the mentor on their Me / Upload tabs"
+                  placeholder="Shown to the creator on their Me / Upload tabs"
                   disabled={busy}
                 />
               </>
@@ -140,7 +140,7 @@ export function MentorFreezeModal({
                 disabled={busy}
                 onClick={() => onConfirmUnfreeze?.(row)}
               >
-                Unfreeze mentor
+                Unfreeze creator
               </button>
             ) : (
               <button
@@ -154,7 +154,7 @@ export function MentorFreezeModal({
                   })
                 }
               >
-                Freeze mentor
+                Freeze creator
               </button>
             )}
           </div>

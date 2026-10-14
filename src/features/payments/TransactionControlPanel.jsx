@@ -86,8 +86,8 @@ export function TransactionControlPanel() {
                 <tr>
                   <th className="admin-table-th admin-table-th--index">#</th>
                   <th className="admin-table-th">Created</th>
-                  <th className="admin-table-th">Learner</th>
-                  <th className="admin-table-th">Mentor</th>
+                  <th className="admin-table-th">Booked by</th>
+                  <th className="admin-table-th">Creator</th>
                   <th className="admin-table-th">Amount</th>
                   <th className="admin-table-th">Status</th>
                   <th className="admin-table-th">Admin note</th>

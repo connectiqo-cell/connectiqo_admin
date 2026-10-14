@@ -339,6 +339,21 @@ export async function deleteMentorUploadedVideo(config, video) {
     await supabase.storage.from(MENTOR_THUMB_BUCKET).remove([thumbPath]).catch(() => {});
   }
 
+  // The HLS ladder lives under hls/<id>/ as a folder of manifests and segments,
+  // not a single object, so it has to be listed before it can be removed.
+  try {
+    const { data: hlsFiles } = await supabase.storage
+      .from(MENTOR_VIDEO_BUCKET)
+      .list(`hls/${id}`);
+    if (hlsFiles?.length) {
+      await supabase.storage
+        .from(MENTOR_VIDEO_BUCKET)
+        .remove(hlsFiles.map((f) => `hls/${id}/${f.name}`));
+    }
+  } catch {
+    // Best-effort, like the others: an orphaned segment must not block the delete.
+  }
+
   const { error } = await supabase.from("mentor_videos").delete().eq("id", id);
   if (error) throw error;
 }
@@ -526,6 +541,26 @@ export async function unfreezeMentor(config, mentorId, operator = null) {
   return callAdminRpc(config, "admin_unfreeze_mentor", {
     p_id: mentorId,
     p_operator: operator,
+  });
+}
+
+/** Every visible mentor with trending score + pin/hide overrides, in Welcome-screen order. */
+export async function getTrendingBoard(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase.rpc("admin_get_trending_board");
+  if (error) throw error;
+  return data || [];
+}
+
+/** Replace the ordered pin list (first id = first card on the Welcome screen). */
+export async function setTrendingPins(config, mentorIds) {
+  return callAdminRpc(config, "admin_set_trending_pins", { p_mentor_ids: mentorIds });
+}
+
+export async function setTrendingHidden(config, mentorId, hidden) {
+  return callAdminRpc(config, "admin_set_trending_hidden", {
+    p_mentor_id: mentorId,
+    p_hidden: Boolean(hidden),
   });
 }
 

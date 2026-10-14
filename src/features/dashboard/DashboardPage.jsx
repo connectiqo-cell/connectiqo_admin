@@ -8,9 +8,9 @@ import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useAuth } from "../../app/providers/AuthProvider.jsx";
 
 const PLATFORM_KPIS = [
-  { label: "Total Users", key: "usersCount", icon: "people", to: "/users", hint: "Learner & user profiles" },
+  { label: "Total Users", key: "usersCount", icon: "people", to: "/users", hint: "All user profiles" },
   { label: "Bookings", key: "bookingsCount", icon: "event", to: "/bookings", hint: "All booking records" },
-  { label: "Mentors", key: "mentorsCount", icon: "school", to: "/users", hint: "Mentor profiles (open Profiles)" },
+  { label: "Creators", key: "mentorsCount", icon: "school", to: "/users", hint: "Creator profiles (open Profiles)" },
 ];
 
 const VIDEO_KPIS = [
@@ -20,7 +20,7 @@ const VIDEO_KPIS = [
 
 const QUICK_ACTIONS = [
   { to: "/users", label: "Manage Profiles", icon: "people", desc: "View & edit user accounts" },
-  { to: "/reports", label: "Profile reports", icon: "flag", desc: "Review user-submitted reports" },
+  { to: "/reports", label: "Reports", icon: "flag", desc: "Profile, video, booking & call reports" },
   { to: "/bookings", label: "Bookings", icon: "event", desc: "Sessions & scheduling" },
   { to: "/payments", label: "Payments", icon: "payments", desc: "Transactions & wallets" },
   { to: "/withdrawals", label: "Withdrawals", icon: "account_balance_wallet", desc: "Payout queue & fulfilment" },
@@ -125,9 +125,6 @@ export function DashboardPage() {
     load();
   }, [load]);
 
-  const envClass = environment === "production" ? "env-badge--prod" : "env-badge--staging";
-  const envLabel = environment === "production" ? "Production" : "Staging";
-
   const videoValues = useMemo(
     () => ({
       sessions: videoStats.sessions?.length ?? 0,
@@ -221,7 +218,7 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="d-flex flex-wrap align-items-center gap-2">
-            <span className={`env-badge ${envClass}`}>{envLabel}</span>
+            <span className="env-badge env-badge--prod">Production</span>
             <button
               type="button"
               className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"

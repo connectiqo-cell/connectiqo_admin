@@ -9,7 +9,7 @@ export const NAV_GROUPS = [
     label: "People",
     items: [
       { to: "/users", label: "Profiles", icon: "people" },
-      { to: "/reports", label: "Profile reports", icon: "flag" },
+      { to: "/reports", label: "Reports", icon: "flag" },
       { to: "/bookings", label: "Bookings", icon: "event" },
     ],
   },
@@ -28,6 +28,7 @@ export const NAV_GROUPS = [
     items: [
       { to: "/categories", label: "Categories", icon: "category" },
       { to: "/hero-slides", label: "Hero slides", icon: "view_carousel" },
+      { to: "/trending", label: "Trending creators", icon: "local_fire_department" },
     ],
   },
   {

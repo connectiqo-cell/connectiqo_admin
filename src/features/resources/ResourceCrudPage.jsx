@@ -51,6 +51,8 @@ export function ResourceCrudPage({
   enableRichProfileView = false,
   /** Override View button (e.g. navigate to /users/:id). */
   onViewRow = null,
+  /** Show plain humanized column names (Database Explorer). */
+  rawColumnLabels = false,
 }) {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
@@ -271,7 +273,7 @@ export function ResourceCrudPage({
         mentor_freeze_reason: mentorRow?.mentor_freeze_reason ?? null,
       });
     } catch (err) {
-      addToast(err.message || "Could not load mentor freeze status", "error");
+      addToast(err.message || "Could not load creator freeze status", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -309,14 +311,14 @@ export function ResourceCrudPage({
         environment,
         payload: { ...updated, _admin_action: "mentor_freeze" },
       });
-      addToast(`${row.name || "Mentor"} frozen`);
+      addToast(`${row.name || "Creator"} frozen`);
       setMentorFreezeRow(null);
       await load();
       if (enableRichProfileView && (viewingRow?.id === row.id || profileDetail?.profile?.id === row.id)) {
         await openRichProfile(row.id);
       }
     } catch (err) {
-      addToast(err.message || "Mentor freeze failed", "error");
+      addToast(err.message || "Creator freeze failed", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -332,14 +334,14 @@ export function ResourceCrudPage({
         environment,
         payload: { ...updated, _admin_action: "mentor_unfreeze" },
       });
-      addToast(`${row.name || "Mentor"} restored`);
+      addToast(`${row.name || "Creator"} restored`);
       setMentorFreezeRow(null);
       await load();
       if (enableRichProfileView && (viewingRow?.id === row.id || profileDetail?.profile?.id === row.id)) {
         await openRichProfile(row.id);
       }
     } catch (err) {
-      addToast(err.message || "Mentor unfreeze failed", "error");
+      addToast(err.message || "Creator unfreeze failed", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -358,7 +360,7 @@ export function ResourceCrudPage({
           className={`btn btn-sm btn-outline-${active ? "success" : "warning"}`}
           onClick={() => openMentorFreeze(row)}
         >
-          {active ? "Unfreeze mentor" : "Freeze mentor"}
+          {active ? "Unfreeze creator" : "Freeze creator"}
         </button>
       );
     }
@@ -493,6 +495,7 @@ export function ResourceCrudPage({
           sortCol={sortCol}
           sortDir={sortDir}
           onSort={handleSort}
+          rawColumnLabels={rawColumnLabels}
         />
       )}
 
@@ -584,7 +587,7 @@ export function ResourceCrudPage({
         body={
           banRow?.is_frozen
             ? `Restore sign-in access for "${banRow?.name || banRow?.email}".`
-            : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer mentor freeze unless you need a full ban.`
+            : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer creator freeze unless you need a full ban.`
         }
         confirmText={banRow?.is_frozen ? "Unban login" : "Ban login"}
         onCancel={() => setBanRow(null)}
@@ -627,6 +630,7 @@ export function ResourceCrudPage({
           title={`Row details: ${tableName}`}
           data={viewingRow}
           fields={detailFields}
+          rawLabels={rawColumnLabels}
           onClose={() => {
             setViewingRow(null);
             if (openRowId && String(viewingRow?.id) === String(openRowId)) {

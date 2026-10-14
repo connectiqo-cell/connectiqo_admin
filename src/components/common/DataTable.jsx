@@ -1,3 +1,5 @@
+import { columnDisplayLabel } from "../../utils/displayLabels.js";
+
 export function DataTable({
   rows,
   onView,
@@ -9,6 +11,7 @@ export function DataTable({
   sortCol,
   sortDir,
   onSort,
+  rawColumnLabels = false,
 }) {
   if (!rows?.length) {
     return (
@@ -33,9 +36,7 @@ export function DataTable({
 
   const labelFor = (column) =>
     (columnLabels && columnLabels[column]) ||
-    String(column)
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    columnDisplayLabel(column, { raw: rawColumnLabels });
 
   const handleSort = (col) => {
     if (!hasSorting) return;

@@ -268,10 +268,11 @@ body,
   cursor: pointer;
 }
 
-/* Brand logo */
+/* Brand logo — matches app / website Connectiqo mark */
 .brand-logo__img {
-  border-radius: 14px;
-  object-fit: cover;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #000;
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--admin-accent) 40%, transparent),
     0 8px 24px rgba(168, 85, 247, 0.25);

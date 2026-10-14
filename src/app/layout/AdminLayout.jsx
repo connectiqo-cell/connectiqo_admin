@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import gsap from "gsap";
 import { getNavItemByPath } from "../../utils/navigation.js";
 import { useTheme } from "../providers/ThemeProvider.jsx";
-import { useEnvironment } from "../providers/EnvironmentProvider.jsx";
 import { useAuth } from "../providers/AuthProvider.jsx";
 import { BrandLogo } from "../../components/common/BrandLogo.jsx";
 import { SidebarNav } from "../../components/layout/SidebarNav.jsx";
@@ -21,7 +20,6 @@ export function AdminLayout() {
   const shellRef = useRef(null);
   const routeRef = useRef(null);
   const { theme, toggleTheme } = useTheme();
-  const { environment, switchEnvironment } = useEnvironment();
   const { session, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -163,7 +161,6 @@ export function AdminLayout() {
   }, [pathname]);
 
   const pageTitle = getNavItemByPath(pathname)?.label || "Panel";
-  const envClass = environment === "production" ? "env-badge--prod" : "env-badge--staging";
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
@@ -227,18 +224,8 @@ export function AdminLayout() {
                 </span>
               </div>
 
-              <select
-                className="form-select form-select-sm admin-env-select"
-                value={environment}
-                onChange={(e) => switchEnvironment(e.target.value)}
-                aria-label="Environment"
-              >
-                <option value="staging">Staging</option>
-                <option value="production">Production</option>
-              </select>
-
-              <span className={`env-badge ${envClass} d-none d-md-inline`}>
-                {environment}
+              <span className="env-badge env-badge--prod d-none d-md-inline" title="Connected to production">
+                Production
               </span>
 
               <button

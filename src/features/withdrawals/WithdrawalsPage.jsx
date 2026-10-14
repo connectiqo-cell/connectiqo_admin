@@ -270,7 +270,7 @@ export function WithdrawalsPage() {
       <div className="admin-card p-3">
         <h4 className="mb-1">Withdrawals</h4>
         <p className="text-muted mb-0">
-          Pay mentors manually via company UPI / IMPS / NEFT, then record the UTR here. Reject
+          Pay creators manually via company UPI / IMPS / NEFT, then record the UTR here. Reject
           restores the held wallet balance automatically — never edit status from the raw
           database explorer.
         </p>
@@ -334,7 +334,7 @@ export function WithdrawalsPage() {
             <SearchBar
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search mentor name, email, UPI, or account number…"
+              placeholder="Search creator name, email, UPI, or account number…"
               size="sm"
               disabled={loading}
             />
@@ -410,7 +410,7 @@ export function WithdrawalsPage() {
         title="Mark as processing?"
         body={
           processingConfirmRow
-            ? `Lock this ${fmt(processingConfirmRow.amount)} request to ${processingConfirmRow.mentor_name || "this mentor"} so another operator doesn't pay it twice.`
+            ? `Lock this ${fmt(processingConfirmRow.amount)} request to ${processingConfirmRow.mentor_name || "this creator"} so another operator doesn't pay it twice.`
             : ""
         }
         confirmText="Mark processing"
@@ -433,7 +433,7 @@ export function WithdrawalsPage() {
           rejectRow ? (
             <div>
               <p>
-                {fmt(rejectRow.amount)} will be returned to {rejectRow.mentor_name || "the mentor"}&apos;s wallet.
+                {fmt(rejectRow.amount)} will be returned to {rejectRow.mentor_name || "the creator"}&apos;s wallet.
                 This cannot be undone.
               </p>
               <label className="form-label small text-muted mb-1">Reason (min 8 characters)</label>
@@ -442,7 +442,7 @@ export function WithdrawalsPage() {
                 rows={2}
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="e.g. UPI ID bounced, mentor requested cancellation…"
+                placeholder="e.g. UPI ID bounced, creator requested cancellation…"
                 autoFocus
               />
             </div>
@@ -482,7 +482,7 @@ function WithdrawalRow({ row, busy, onCopy, onMarkProcessing, onFulfil, onReject
         </span>
         <div className="flex-grow-1 min-w-0">
           <div className="d-flex align-items-center gap-2">
-            <span className="fw-semibold text-truncate">{row.mentor_name || "Unknown mentor"}</span>
+            <span className="fw-semibold text-truncate">{row.mentor_name || "Unknown creator"}</span>
             {methodBadge ? (
               <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis d-inline-flex align-items-center gap-1">
                 <span className="material-icons" style={{ fontSize: 12 }}>{methodBadge.icon}</span>
@@ -611,7 +611,7 @@ function FulfilModal({ row, busy, onCancel, onConfirm }) {
           </div>
           <div className="modal-body d-flex flex-column gap-3">
             <div className="d-flex justify-content-between align-items-center">
-              <span className="text-muted small">Mentor</span>
+              <span className="text-muted small">Creator</span>
               <span className="fw-semibold">{row.mentor_name || row.mentor_id}</span>
             </div>
             <div className="d-flex justify-content-between align-items-center">

@@ -32,6 +32,28 @@ const STATUS_TABS = [
   { key: "all", label: "All", statuses: null },
 ];
 
+const CONTEXT_SECTIONS = [
+  { key: "all", label: "All reports", icon: "flag", types: null },
+  { key: "profile", label: "Profile", icon: "person", types: ["profile"] },
+  { key: "video", label: "Video", icon: "movie", types: ["video"] },
+  { key: "booking", label: "Booking", icon: "event", types: ["booking"] },
+  { key: "call", label: "Call / meeting", icon: "videocam", types: ["call"] },
+];
+
+const CONTEXT_LABELS = {
+  profile: "Profile",
+  video: "Video",
+  booking: "Booking",
+  call: "Call",
+};
+
+const CONTEXT_BADGE = {
+  profile: "bg-primary-subtle text-primary-emphasis",
+  video: "bg-danger-subtle text-danger-emphasis",
+  booking: "bg-warning-subtle text-warning-emphasis",
+  call: "bg-info-subtle text-info-emphasis",
+};
+
 const REASON_LABELS = {
   harassment: "Harassment or bullying",
   hate_or_abuse: "Hate speech or abuse",
@@ -43,6 +65,11 @@ const REASON_LABELS = {
 };
 
 const PAGE_SIZE = 10;
+const TOP_REPORTED_LIMIT = 12;
+
+function normalizeContext(type) {
+  return (type || "profile").toLowerCase();
+}
 
 function initials(name, email) {
   const source = (name || email || "?").trim();
@@ -68,9 +95,16 @@ function formatReason(reason) {
   return REASON_LABELS[reason] || reason || "Unknown";
 }
 
+function contextHref(row) {
+  const type = normalizeContext(row.context_type);
+  if (type === "video" && row.context_id) return `/videos`;
+  if ((type === "booking" || type === "call") && row.context_id) return `/bookings`;
+  return `/users/${encodeURIComponent(row.reported_user_id)}`;
+}
+
 function KpiCard({ label, value, hint, icon, accent }) {
   return (
-    <div className="col-12 col-sm-6 col-xl-3">
+    <div className="col-6 col-md-4 col-xl">
       <div className="admin-card p-3 h-100 d-flex align-items-start gap-3">
         <span
           className={`material-icons rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 ${accent}`}
@@ -113,9 +147,11 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [contextSection, setContextSection] = useState("all");
   const [activeTab, setActiveTab] = useState("queue");
   const [search, setSearch] = useState("");
   const [reasonFilter, setReasonFilter] = useState("all");
+  const [focusUserId, setFocusUserId] = useState(null);
   const [page, setPage] = useState(1);
 
   const [statusConfirm, setStatusConfirm] = useState(null);
@@ -141,20 +177,78 @@ export function ReportsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeTab, search, reasonFilter]);
+  }, [activeTab, search, reasonFilter, contextSection, focusUserId]);
+
+  const contextCounts = useMemo(() => {
+    const counts = { all: rows.length, profile: 0, video: 0, booking: 0, call: 0 };
+    rows.forEach((r) => {
+      const key = normalizeContext(r.context_type);
+      if (counts[key] !== undefined) counts[key] += 1;
+      else counts.profile += 1;
+    });
+    return counts;
+  }, [rows]);
 
   const kpis = useMemo(() => {
     const pending = rows.filter((r) => r.status === "pending").length;
     const reviewing = rows.filter((r) => r.status === "reviewing").length;
     const actioned = rows.filter((r) => r.status === "actioned").length;
-    const dismissed = rows.filter((r) => r.status === "dismissed").length;
-    return { pending, reviewing, actioned, dismissed };
+    const open = pending + reviewing;
+    return { pending, reviewing, actioned, open };
+  }, [rows]);
+
+  const mostReported = useMemo(() => {
+    const byUser = new Map();
+    rows.forEach((r) => {
+      const id = r.reported_user_id;
+      if (!id) return;
+      if (!byUser.has(id)) {
+        byUser.set(id, {
+          id,
+          name: r.reported_name,
+          email: r.reported_email,
+          total: 0,
+          open: 0,
+          byContext: { profile: 0, video: 0, booking: 0, call: 0 },
+          latestAt: r.created_at,
+        });
+      }
+      const entry = byUser.get(id);
+      entry.total += 1;
+      if (r.status === "pending" || r.status === "reviewing") entry.open += 1;
+      const ctx = normalizeContext(r.context_type);
+      if (entry.byContext[ctx] !== undefined) entry.byContext[ctx] += 1;
+      else entry.byContext.profile += 1;
+      if (r.reported_name) entry.name = r.reported_name;
+      if (r.reported_email) entry.email = r.reported_email;
+      if (new Date(r.created_at).getTime() > new Date(entry.latestAt || 0).getTime()) {
+        entry.latestAt = r.created_at;
+      }
+    });
+
+    return [...byUser.values()]
+      .sort((a, b) => {
+        if (b.open !== a.open) return b.open - a.open;
+        if (b.total !== a.total) return b.total - a.total;
+        return new Date(b.latestAt || 0).getTime() - new Date(a.latestAt || 0).getTime();
+      })
+      .slice(0, TOP_REPORTED_LIMIT);
   }, [rows]);
 
   const filteredRows = useMemo(() => {
+    const section = CONTEXT_SECTIONS.find((t) => t.key === contextSection) || CONTEXT_SECTIONS[0];
     const tab = STATUS_TABS.find((t) => t.key === activeTab) || STATUS_TABS[0];
-    let list = tab.statuses ? rows.filter((r) => tab.statuses.includes(r.status)) : rows;
 
+    let list = rows;
+    if (section.types) {
+      list = list.filter((r) => section.types.includes(normalizeContext(r.context_type)));
+    }
+    if (tab.statuses) {
+      list = list.filter((r) => tab.statuses.includes(r.status));
+    }
+    if (focusUserId) {
+      list = list.filter((r) => r.reported_user_id === focusUserId);
+    }
     if (reasonFilter !== "all") {
       list = list.filter((r) => r.reason === reasonFilter);
     }
@@ -170,6 +264,7 @@ export function ReportsPage() {
           r.reason,
           r.details,
           r.context_type,
+          r.context_id,
         ]
           .filter(Boolean)
           .some((field) => String(field).toLowerCase().includes(q))
@@ -179,20 +274,34 @@ export function ReportsPage() {
     return [...list].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [rows, activeTab, search, reasonFilter]);
+  }, [rows, activeTab, search, reasonFilter, contextSection, focusUserId]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const pageRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const tabCounts = useMemo(() => {
+    const section = CONTEXT_SECTIONS.find((t) => t.key === contextSection) || CONTEXT_SECTIONS[0];
+    let base = rows;
+    if (section.types) {
+      base = base.filter((r) => section.types.includes(normalizeContext(r.context_type)));
+    }
+    if (focusUserId) {
+      base = base.filter((r) => r.reported_user_id === focusUserId);
+    }
     const counts = {};
     STATUS_TABS.forEach((tab) => {
       counts[tab.key] = tab.statuses
-        ? rows.filter((r) => tab.statuses.includes(r.status)).length
-        : rows.length;
+        ? base.filter((r) => tab.statuses.includes(r.status)).length
+        : base.length;
     });
     return counts;
-  }, [rows]);
+  }, [rows, contextSection, focusUserId]);
+
+  const focusUserLabel = useMemo(() => {
+    if (!focusUserId) return null;
+    const hit = rows.find((r) => r.reported_user_id === focusUserId);
+    return hit?.reported_name || hit?.reported_email || focusUserId;
+  }, [focusUserId, rows]);
 
   const setStatus = async (row, nextStatus, successMessage) => {
     setBusyId(row.id);
@@ -220,21 +329,21 @@ export function ReportsPage() {
     setStatusConfirm(null);
   };
 
-  const openFreezeFromReport = async (reportRow) => {
+  const openFreeze = async ({ reportRow = null, userId, name, email }) => {
     setFreezeBusy(true);
     try {
-      const mentorRow = await getTableRowById(config, "mentor_profiles", reportRow.reported_user_id);
+      const mentorRow = await getTableRowById(config, "mentor_profiles", userId);
       setFreezeTarget({
         report: reportRow,
-        id: reportRow.reported_user_id,
-        name: reportRow.reported_name,
-        email: reportRow.reported_email,
+        id: userId,
+        name,
+        email,
         mentor_frozen: mentorRow?.mentor_frozen === true,
         mentor_frozen_until: mentorRow?.mentor_frozen_until ?? null,
         mentor_freeze_reason: mentorRow?.mentor_freeze_reason ?? null,
       });
     } catch (err) {
-      addToast(err.message || "Could not load mentor freeze status", "error");
+      addToast(err.message || "Could not load creator freeze status", "error");
     } finally {
       setFreezeBusy(false);
     }
@@ -252,13 +361,14 @@ export function ReportsPage() {
         payload: { ...updated, _admin_action: "mentor_freeze_from_report" },
       });
       if (row.report) {
-        await setStatus(row.report, "actioned", "Mentor frozen and report marked actioned");
+        await setStatus(row.report, "actioned", "Creator frozen and report marked actioned");
       } else {
-        addToast("Mentor frozen");
+        addToast("Creator frozen");
+        await load();
       }
       setFreezeTarget(null);
     } catch (err) {
-      addToast(err.message || "Could not freeze mentor", "error");
+      addToast(err.message || "Could not freeze creator", "error");
       setBusyId(null);
     } finally {
       setFreezeBusy(false);
@@ -270,55 +380,207 @@ export function ReportsPage() {
     addToast(ok ? `${label} copied` : `Could not copy ${label.toLowerCase()}`, ok ? "success" : "error");
   };
 
+  const activeSection = CONTEXT_SECTIONS.find((s) => s.key === contextSection) || CONTEXT_SECTIONS[0];
+
   return (
     <div className="d-grid gap-3">
       <div className="admin-card p-3">
-        <h4 className="mb-1">Profile reports</h4>
+        <h4 className="mb-1">User reports</h4>
         <p className="text-muted mb-0">
-          Review reports submitted from the mobile app. Freeze the mentor side with a duration
-          (hides profile/videos, pauses unlocks) while learner access stays open.
+          Separate queues for profile, video, booking, and call reports. Prioritize creators with the
+          highest open report counts, then freeze or mark actioned.
         </p>
       </div>
 
       <div className="row g-3">
         <KpiCard
-          label="Pending"
-          value={kpis.pending}
-          hint="Awaiting first look"
-          icon="flag"
+          label="Open queue"
+          value={kpis.open}
+          hint="Pending + reviewing"
+          icon="inbox"
           accent="bg-warning-subtle text-warning-emphasis"
         />
         <KpiCard
-          label="Reviewing"
-          value={kpis.reviewing}
-          hint="In progress"
-          icon="manage_search"
+          label="Profile"
+          value={contextCounts.profile}
+          hint="Profile reports"
+          icon="person"
+          accent="bg-primary-subtle text-primary-emphasis"
+        />
+        <KpiCard
+          label="Video"
+          value={contextCounts.video}
+          hint="Video reports"
+          icon="movie"
+          accent="bg-danger-subtle text-danger-emphasis"
+        />
+        <KpiCard
+          label="Booking"
+          value={contextCounts.booking}
+          hint="Session booking reports"
+          icon="event"
+          accent="bg-warning-subtle text-warning-emphasis"
+        />
+        <KpiCard
+          label="Call"
+          value={contextCounts.call}
+          hint="In-meeting reports"
+          icon="videocam"
           accent="bg-info-subtle text-info-emphasis"
-        />
-        <KpiCard
-          label="Actioned"
-          value={kpis.actioned}
-          hint="Moderation applied"
-          icon="gavel"
-          accent="bg-success-subtle text-success-emphasis"
-        />
-        <KpiCard
-          label="In queue"
-          value={tabCounts.queue}
-          hint="Pending + reviewing"
-          icon="inbox"
-          accent="bg-secondary-subtle text-secondary-emphasis"
         />
       </div>
 
       <div className="admin-card p-3 p-md-4">
+        <div className="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+          <div>
+            <h5 className="mb-1">Most reported creators</h5>
+            <p className="text-muted small mb-0">
+              Ranked by open reports first, then total. Use this list to take action quickly.
+            </p>
+          </div>
+          <button type="button" className="btn btn-sm btn-outline-primary" onClick={load} disabled={loading}>
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <>
+            <RowSkeleton />
+            <RowSkeleton />
+          </>
+        ) : null}
+
+        {!loading && mostReported.length === 0 ? (
+          <div className="text-muted small py-3">No reports yet.</div>
+        ) : null}
+
+        {!loading
+          ? mostReported.map((mentor, index) => {
+              const selected = focusUserId === mentor.id;
+              return (
+                <div
+                  key={mentor.id}
+                  className={`border rounded p-3 mb-2 d-flex flex-wrap align-items-center gap-3 ${
+                    selected ? "border-primary" : ""
+                  }`}
+                  style={selected ? { background: "var(--bs-primary-bg-subtle, rgba(13,110,253,.06))" } : undefined}
+                >
+                  <span
+                    className="rounded-circle bg-secondary-subtle text-secondary-emphasis d-flex align-items-center justify-content-center flex-shrink-0 fw-semibold"
+                    style={{ width: 40, height: 40, fontSize: 13 }}
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="flex-grow-1 min-w-0">
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <span className="fw-semibold text-truncate">{mentor.name || "Unknown user"}</span>
+                      {mentor.open > 0 ? (
+                        <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
+                          {mentor.open} open
+                        </span>
+                      ) : (
+                        <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
+                          Queue clear
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-muted small text-truncate">
+                      {mentor.email || mentor.id} · {mentor.total} total · latest {timeAgo(mentor.latestAt)}
+                    </div>
+                    <div className="d-flex flex-wrap gap-1 mt-1">
+                      {Object.entries(mentor.byContext)
+                        .filter(([, count]) => count > 0)
+                        .map(([ctx, count]) => (
+                          <span
+                            key={ctx}
+                            className={`badge rounded-pill ${CONTEXT_BADGE[ctx] || "bg-secondary-subtle"}`}
+                          >
+                            {CONTEXT_LABELS[ctx] || ctx}: {count}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                  <div className="d-flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${selected ? "btn-primary" : "btn-outline-primary"}`}
+                      onClick={() => {
+                        setFocusUserId(selected ? null : mentor.id);
+                        setActiveTab("queue");
+                      }}
+                    >
+                      {selected ? "Clear filter" : "View reports"}
+                    </button>
+                    <Link
+                      className="btn btn-sm btn-outline-secondary"
+                      to={`/users/${encodeURIComponent(mentor.id)}`}
+                    >
+                      Profile
+                    </Link>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      disabled={freezeBusy}
+                      onClick={() =>
+                        openFreeze({
+                          userId: mentor.id,
+                          name: mentor.name,
+                          email: mentor.email,
+                        })
+                      }
+                    >
+                      Freeze
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          : null}
+      </div>
+
+      <div className="admin-card p-3 p-md-4">
+        <div className="mb-3">
+          <div className="small text-muted mb-2">Report sections</div>
+          <HScroll>
+            {CONTEXT_SECTIONS.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                className={`btn btn-sm d-inline-flex align-items-center gap-1 ${
+                  contextSection === section.key ? "btn-primary" : "btn-outline-secondary"
+                }`}
+                onClick={() => setContextSection(section.key)}
+              >
+                <span className="material-icons" style={{ fontSize: 16 }} aria-hidden="true">
+                  {section.icon}
+                </span>
+                {section.label}
+                <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis ms-1">
+                  {contextCounts[section.key] ?? 0}
+                </span>
+              </button>
+            ))}
+          </HScroll>
+        </div>
+
+        {focusUserId ? (
+          <div className="alert alert-info py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <span>
+              Showing reports against <strong>{focusUserLabel}</strong>
+            </span>
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setFocusUserId(null)}>
+              Clear creator filter
+            </button>
+          </div>
+        ) : null}
+
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
           <HScroll className="flex-grow-1">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                className={`btn btn-sm ${activeTab === tab.key ? "btn-primary" : "btn-outline-secondary"}`}
+                className={`btn btn-sm ${activeTab === tab.key ? "btn-dark" : "btn-outline-secondary"}`}
                 onClick={() => setActiveTab(tab.key)}
               >
                 {tab.label}
@@ -328,9 +590,6 @@ export function ReportsPage() {
               </button>
             ))}
           </HScroll>
-          <button type="button" className="btn btn-sm btn-outline-primary" onClick={load} disabled={loading}>
-            Refresh
-          </button>
         </div>
 
         <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
@@ -361,6 +620,11 @@ export function ReportsPage() {
           </div>
         </div>
 
+        <div className="d-flex align-items-center justify-content-between mb-2">
+          <h6 className="mb-0">{activeSection.label}</h6>
+          <span className="text-muted small">{filteredRows.length} matching</span>
+        </div>
+
         {error ? <div className="alert alert-danger py-2">{error}</div> : null}
 
         {loading ? (
@@ -376,7 +640,7 @@ export function ReportsPage() {
             <span className="material-icons text-muted mb-2" style={{ fontSize: 36 }} aria-hidden="true">
               flag
             </span>
-            <div className="text-muted">No profile reports match this view.</div>
+            <div className="text-muted">No reports match this section.</div>
           </div>
         ) : null}
 
@@ -420,7 +684,14 @@ export function ReportsPage() {
                     variant: "secondary",
                   })
                 }
-                onFreeze={() => openFreezeFromReport(row)}
+                onFreeze={() =>
+                  openFreeze({
+                    reportRow: row,
+                    userId: row.reported_user_id,
+                    name: row.reported_name,
+                    email: row.reported_email,
+                  })
+                }
               />
             ))
           : null}
@@ -483,10 +754,9 @@ export function ReportsPage() {
         busy={freezeBusy}
         onCancel={() => setFreezeTarget(null)}
         onConfirmFreeze={confirmMentorFreezeFromReport}
-        onConfirmUnfreeze={async (row) => {
-          // Reports flow only freezes; manage unfreeze from Profiles / Mentor profiles.
+        onConfirmUnfreeze={async () => {
           setFreezeTarget(null);
-          addToast("Unfreeze from Profiles or Mentor profiles if needed");
+          addToast("Unfreeze from Profiles if needed");
         }}
       />
     </div>
@@ -496,6 +766,7 @@ export function ReportsPage() {
 function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismiss, onFreeze }) {
   const [expanded, setExpanded] = useState(false);
   const isOpen = row.status === "pending" || row.status === "reviewing";
+  const ctx = normalizeContext(row.context_type);
 
   return (
     <div className="border rounded mb-2 overflow-hidden">
@@ -514,8 +785,8 @@ function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismi
         <div className="flex-grow-1 min-w-0">
           <div className="d-flex align-items-center gap-2 flex-wrap">
             <span className="fw-semibold text-truncate">{row.reported_name || "Unknown user"}</span>
-            <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">
-              {row.context_type || "profile"}
+            <span className={`badge rounded-pill ${CONTEXT_BADGE[ctx] || "bg-secondary-subtle"}`}>
+              {CONTEXT_LABELS[ctx] || ctx}
             </span>
           </div>
           <div className="text-muted small text-truncate">
@@ -584,9 +855,23 @@ function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismi
             <div className="col-12 col-md-6">
               <div className="small text-muted mb-1">Context</div>
               <div className="small">
-                {row.context_type || "profile"}
+                {CONTEXT_LABELS[ctx] || ctx}
                 {row.context_id ? ` · ${row.context_id}` : ""}
               </div>
+              {row.context_id ? (
+                <div className="mt-2 d-flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => onCopy(row.context_id, "Context ID")}
+                  >
+                    Copy context ID
+                  </button>
+                  <Link className="btn btn-sm btn-outline-primary" to={contextHref(row)}>
+                    Open related
+                  </Link>
+                </div>
+              ) : null}
             </div>
             <div className="col-12 col-md-6">
               <div className="small text-muted mb-1">Submitted</div>
@@ -628,7 +913,7 @@ function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismi
                 disabled={busy}
                 onClick={onFreeze}
               >
-                Freeze mentor
+                Freeze creator
               </button>
             </div>
           ) : null}

@@ -1,43 +1,37 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
 
 const EnvironmentContext = createContext(null);
 const STORAGE_KEY = "admin_target_environment";
 
+const productionConfig = {
+  label: "Production",
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL_PRODUCTION || "",
+  supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_PRODUCTION || "",
+  authServerUrl: import.meta.env.VITE_AUTH_SERVER_URL_PRODUCTION || "",
+  videoSdkBaseUrl: import.meta.env.VITE_VIDEOSDK_BASE_URL_PRODUCTION || "https://api.videosdk.live/v2",
+};
+
 const environmentConfig = {
-  staging: {
-    label: "Staging",
-    supabaseUrl: import.meta.env.VITE_SUPABASE_URL_STAGING || "",
-    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_STAGING || "",
-    authServerUrl: import.meta.env.VITE_AUTH_SERVER_URL_STAGING || "",
-    videoSdkBaseUrl: import.meta.env.VITE_VIDEOSDK_BASE_URL_STAGING || "https://api.videosdk.live/v2",
-  },
-  production: {
-    label: "Production",
-    supabaseUrl: import.meta.env.VITE_SUPABASE_URL_PRODUCTION || "",
-    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY_PRODUCTION || "",
-    authServerUrl: import.meta.env.VITE_AUTH_SERVER_URL_PRODUCTION || "",
-    videoSdkBaseUrl: import.meta.env.VITE_VIDEOSDK_BASE_URL_PRODUCTION || "https://api.videosdk.live/v2",
-  },
+  production: productionConfig,
 };
 
 export function EnvironmentProvider({ children }) {
-  const [environment, setEnvironment] = useState(
-    () => localStorage.getItem(STORAGE_KEY) || "staging"
-  );
-
-  const switchEnvironment = (nextEnvironment) => {
-    localStorage.setItem(STORAGE_KEY, nextEnvironment);
-    setEnvironment(nextEnvironment);
-  };
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, "production");
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const value = useMemo(
     () => ({
-      environment,
-      config: environmentConfig[environment],
-      switchEnvironment,
+      environment: "production",
+      config: productionConfig,
+      switchEnvironment: () => {},
       environments: environmentConfig,
     }),
-    [environment]
+    []
   );
 
   return <EnvironmentContext.Provider value={value}>{children}</EnvironmentContext.Provider>;

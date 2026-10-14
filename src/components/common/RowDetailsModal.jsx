@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import { columnDisplayLabel } from "../../utils/displayLabels.js";
 
-export function RowDetailsModal({ open, title, data, onClose, fields = null }) {
+export function RowDetailsModal({ open, title, data, onClose, fields = null, rawLabels = false }) {
   const [isRendered, setIsRendered] = useState(open);
   const backdropRef = useRef(null);
   const dialogRef = useRef(null);
@@ -51,7 +52,7 @@ export function RowDetailsModal({ open, title, data, onClose, fields = null }) {
       ? fields
       : Object.keys(data || {}).map((key) => ({
           key,
-          label: key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
+          label: columnDisplayLabel(key, { raw: rawLabels }),
         }));
 
   const getValue = (key) => {

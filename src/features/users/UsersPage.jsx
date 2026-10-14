@@ -8,7 +8,7 @@ export function UsersPage() {
     <ResourceCrudPage
       title="Profiles"
       tableName="profiles"
-      description="Browse users, open a profile for media and moderation, freeze mentor access, or ban login."
+      description="Browse users, open a profile for media and moderation, freeze creator access, or ban login."
       compactColumns={["name", "email", "is_frozen", "created_at"]}
       columnLabels={{
         name: "Name",

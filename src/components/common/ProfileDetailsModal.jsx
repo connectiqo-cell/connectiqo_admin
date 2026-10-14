@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { Link } from "react-router-dom";
+import { roleDisplayLabel } from "../../utils/displayLabels.js";
 
 function fmt(value) {
   if (value === null || value === undefined || value === "") return "—";
@@ -142,7 +143,7 @@ export function ProfileDetailsModal({
                     </div>
                     <div className="d-flex flex-wrap gap-2 mt-2">
                       <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">
-                        {profile.role || "role?"}
+                        {roleDisplayLabel(profile.role) || "role?"}
                       </span>
                       {profile.is_frozen ? (
                         <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
@@ -151,14 +152,14 @@ export function ProfileDetailsModal({
                       ) : null}
                       {mentorFrozen ? (
                         <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-                          Mentor frozen
+                          Creator frozen
                           {mentor.mentor_frozen_until
                             ? ` until ${fmtDate(mentor.mentor_frozen_until)}`
                             : " (indefinite)"}
                         </span>
                       ) : mentor ? (
                         <span className="badge rounded-pill bg-success-subtle text-success-emphasis">
-                          Mentor active
+                          Creator active
                         </span>
                       ) : null}
                     </div>
@@ -169,22 +170,22 @@ export function ProfileDetailsModal({
                   <Field label="User ID" value={profile.id} mono />
                   <Field label="Username" value={profile.username ? `@${profile.username}` : null} />
                   <Field label="Email" value={profile.email} />
-                  <Field label="Role" value={profile.role} />
+                  <Field label="Role" value={roleDisplayLabel(profile.role)} />
                   <Field label="Created" value={fmtDate(profile.created_at)} />
                   <Field label="Avatar URL" value={profile.avatar_url} mono />
                 </Section>
 
                 <Section title="Moderation">
                   <Field label="Login banned" value={Boolean(profile.is_frozen)} />
-                  <Field label="Mentor frozen" value={mentorFrozen} />
+                  <Field label="Creator frozen" value={mentorFrozen} />
                   <Field label="Frozen until" value={fmtDate(mentor?.mentor_frozen_until)} />
                   <Field label="Freeze reason" value={mentor?.mentor_freeze_reason} />
                 </Section>
 
                 <Section title="Activity">
                   <StatChip label="Videos" value={stats.videos} />
-                  <StatChip label="Bookings (mentor)" value={stats.bookingsAsMentor} />
-                  <StatChip label="Bookings (learner)" value={stats.bookingsAsLearner} />
+                  <StatChip label="Bookings (as creator)" value={stats.bookingsAsMentor} />
+                  <StatChip label="Bookings (as customer)" value={stats.bookingsAsLearner} />
                   <StatChip label="Reviews" value={stats.reviews} />
                   <StatChip label="Reports against" value={stats.reportsAgainst} />
                   <StatChip label="Reports filed" value={stats.reportsFiled} />
@@ -193,7 +194,7 @@ export function ProfileDetailsModal({
                 </Section>
 
                 {mentor ? (
-                  <Section title="Mentor profile">
+                  <Section title="Creator profile">
                     <Field label="Specialization" value={mentor.specialization} />
                     <Field label="Category" value={mentor.category} />
                     <Field label="Experience (years)" value={mentor.experience_years} />
@@ -217,11 +218,11 @@ export function ProfileDetailsModal({
                     <Field label="Cover image" value={mentor.cover_image_url} mono />
                   </Section>
                 ) : (
-                  <div className="alert alert-light border mb-4">No mentor profile row for this user.</div>
+                  <div className="alert alert-light border mb-4">No creator profile row for this user.</div>
                 )}
 
                 {learner ? (
-                  <Section title="Learner profile">
+                  <Section title="Customer profile">
                     <div className="col-12">
                       <div className="small text-muted mb-1">Bio</div>
                       <div className="border rounded p-2 small" style={{ whiteSpace: "pre-wrap" }}>
@@ -247,7 +248,7 @@ export function ProfileDetailsModal({
             ) : null}
             {onFreezeMentor && profile ? (
               <button type="button" className="btn btn-warning" onClick={() => onFreezeMentor(profile)}>
-                {mentorFrozen ? "Manage freeze" : "Freeze mentor"}
+                {mentorFrozen ? "Manage freeze" : "Freeze creator"}
               </button>
             ) : null}
             <button type="button" className="btn btn-secondary" onClick={onClose}>

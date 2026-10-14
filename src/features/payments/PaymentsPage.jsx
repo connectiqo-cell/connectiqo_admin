@@ -27,16 +27,16 @@ const PAYMENT_RESOURCES = [
   },
   {
     id: "wallets",
-    label: "Mentor Wallets",
+    label: "Creator Wallets",
     tableName: "mentor_wallets",
-    description: "Mentor balances, total earned, and withdrawals.",
+    description: "Creator balances, total earned, and withdrawals.",
     compactColumns: ["id", "balance", "total_earned", "total_withdrawn"],
   },
   {
     id: "earnings",
     label: "Earnings",
     tableName: "earnings",
-    description: "Session earnings linked to mentors and bookings.",
+    description: "Session earnings linked to creators and bookings.",
     compactColumns: ["mentor_id", "booking_id", "amount", "status"],
     filterFields: [
       { key: "status", label: "Status", options: ["all", "pending", "unpaid", "paid"] },

@@ -56,6 +56,7 @@ export function DatabaseExplorerPage() {
         title={`Table: ${tableName}`}
         tableName={tableName}
         description="Direct CRUD access to selected Supabase table."
+        rawColumnLabels
       />
     </div>
   );

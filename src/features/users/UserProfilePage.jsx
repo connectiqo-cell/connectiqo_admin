@@ -20,6 +20,7 @@ import { MentorFreezeModal } from "../../components/common/MentorFreezeModal.jsx
 import { RecordingPlayerModal } from "../../components/common/RecordingPlayerModal.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { roleDisplayLabel } from "../../utils/displayLabels.js";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -174,7 +175,7 @@ export function UserProfilePage() {
         mentor_freeze_reason: mentorRow?.mentor_freeze_reason ?? null,
       });
     } catch (err) {
-      addToast(err.message || "Could not load mentor freeze status", "error");
+      addToast(err.message || "Could not load creator freeze status", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -209,11 +210,11 @@ export function UserProfilePage() {
         environment,
         payload: { ...updated, _admin_action: "mentor_freeze" },
       });
-      addToast(`${row.name || "Mentor"} frozen`);
+      addToast(`${row.name || "Creator"} frozen`);
       setMentorFreezeRow(null);
       await loadDetail();
     } catch (err) {
-      addToast(err.message || "Mentor freeze failed", "error");
+      addToast(err.message || "Creator freeze failed", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -229,11 +230,11 @@ export function UserProfilePage() {
         environment,
         payload: { ...updated, _admin_action: "mentor_unfreeze" },
       });
-      addToast(`${row.name || "Mentor"} restored`);
+      addToast(`${row.name || "Creator"} restored`);
       setMentorFreezeRow(null);
       await loadDetail();
     } catch (err) {
-      addToast(err.message || "Mentor unfreeze failed", "error");
+      addToast(err.message || "Creator unfreeze failed", "error");
     } finally {
       setMentorFreezeBusy(false);
     }
@@ -312,7 +313,7 @@ export function UserProfilePage() {
                 </div>
                 <div className="user-profile-badges">
                   <span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis">
-                    {profile.role || "role?"}
+                    {roleDisplayLabel(profile.role) || "role?"}
                   </span>
                   {profile.is_frozen ? (
                     <span className="badge rounded-pill bg-danger-subtle text-danger-emphasis">
@@ -321,7 +322,7 @@ export function UserProfilePage() {
                   ) : null}
                   {mentorFrozen ? (
                     <span className="badge rounded-pill bg-warning-subtle text-warning-emphasis">
-                      Mentor frozen
+                      Creator frozen
                     </span>
                   ) : null}
                 </div>
@@ -349,7 +350,7 @@ export function UserProfilePage() {
                 onClick={openMentorFreeze}
                 disabled={mentorFreezeBusy}
               >
-                {mentorFrozen ? "Manage freeze" : "Freeze mentor"}
+                {mentorFrozen ? "Manage freeze" : "Freeze creator"}
               </button>
               <Link className="btn btn-sm btn-outline-primary" to="/reports">
                 Reports
@@ -404,8 +405,8 @@ export function UserProfilePage() {
                 <div className="user-profile-stats">
                   <StatChip label="Uploaded videos" value={stats.videos ?? uploads.length} />
                   <StatChip label="Session recordings" value={recordings.length} />
-                  <StatChip label="Bookings (mentor)" value={stats.bookingsAsMentor} />
-                  <StatChip label="Bookings (learner)" value={stats.bookingsAsLearner} />
+                  <StatChip label="Bookings (as creator)" value={stats.bookingsAsMentor} />
+                  <StatChip label="Bookings (as customer)" value={stats.bookingsAsLearner} />
                   <StatChip label="Reviews" value={stats.reviews} />
                   <StatChip label="Reports against" value={stats.reportsAgainst} />
                   <StatChip label="Unlock buyers" value={stats.unlockBuyers} />
@@ -420,14 +421,14 @@ export function UserProfilePage() {
                   <Field label="Email" value={profile.email} />
                   <Field label="Created" value={fmtDate(profile.created_at)} />
                   <Field label="Login banned" value={Boolean(profile.is_frozen)} />
-                  <Field label="Mentor frozen" value={mentorFrozen} />
+                  <Field label="Creator frozen" value={mentorFrozen} />
                   <Field label="Frozen until" value={fmtDate(mentor?.mentor_frozen_until)} />
                   <Field label="Freeze reason" value={mentor?.mentor_freeze_reason} />
                 </div>
               </Section>
 
               {mentor ? (
-                <Section title="Mentor profile">
+                <Section title="Creator profile">
                   <div className="user-profile-fields">
                     <Field label="Specialization" value={mentor.specialization} />
                     <Field label="Category" value={mentor.category} />
@@ -444,7 +445,7 @@ export function UserProfilePage() {
               ) : null}
 
               {learner ? (
-                <Section title="Learner profile">
+                <Section title="Customer profile">
                   <div className="user-profile-field">
                     <div className="user-profile-field__label">Bio</div>
                     <div className="user-profile-block">{fmt(learner.bio)}</div>
@@ -462,7 +463,7 @@ export function UserProfilePage() {
           mediaLoading ? (
             <div className="text-muted py-4">Loading uploaded videos…</div>
           ) : uploads.length === 0 ? (
-            <div className="user-profile-empty">No uploaded mentor videos for this user.</div>
+            <div className="user-profile-empty">No uploaded creator videos for this user.</div>
           ) : (
             <div className="user-profile-media-list">
               {uploads.map((video) => (
@@ -539,7 +540,7 @@ export function UserProfilePage() {
                     <span className="material-icons text-muted">videocam</span>
                   </div>
                   <div className="user-profile-media-body">
-                    <div className="fw-semibold">Session recording · {row.role}</div>
+                    <div className="fw-semibold">Session recording · {row.role === "mentor" ? "as creator" : "booked by this user"}</div>
                     <div className="text-muted small">
                       with {row.counterpart_name || row.counterpart_email || "unknown"} ·{" "}
                       {fmtDate(row.recorded_at || row.created_at)}
@@ -575,7 +576,7 @@ export function UserProfilePage() {
       <ConfirmModal
         open={Boolean(deleteVideoTarget)}
         title="Delete uploaded video"
-        body={`Permanently delete "${deleteVideoTarget?.title || "this video"}" from the mentor library.`}
+        body={`Permanently delete "${deleteVideoTarget?.title || "this video"}" from the creator library.`}
         confirmText="Delete video"
         onCancel={() => setDeleteVideoTarget(null)}
         onConfirm={confirmDeleteUpload}
@@ -587,7 +588,7 @@ export function UserProfilePage() {
         body={
           banRow?.is_frozen
             ? `Restore sign-in access for "${banRow?.name || banRow?.email}".`
-            : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer mentor freeze unless you need a full ban.`
+            : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer creator freeze unless you need a full ban.`
         }
         confirmText={banRow?.is_frozen ? "Unban login" : "Ban login"}
         onCancel={() => setBanRow(null)}

@@ -58,7 +58,7 @@ export function VideosPage() {
     } catch (err) {
       setRows([]);
       setTotal(0);
-      setError(err.message || "Failed to load mentor videos");
+      setError(err.message || "Failed to load creator videos");
     } finally {
       setLoading(false);
     }
@@ -183,8 +183,8 @@ export function VideosPage() {
           <div>
             <h4 className="mb-1">Uploaded videos</h4>
             <div className="text-muted small">
-              Mentor library videos from the app Videos tab. Use Promote to pin a video at the top of
-              the learner feed.
+              Creator library videos from the app Videos tab. Use Promote to pin a video at the top of
+              the Videos feed.
             </div>
           </div>
           <button
@@ -210,7 +210,7 @@ export function VideosPage() {
             <SearchBar
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search title, description, mentor…"
+              placeholder="Search title, description, creator…"
               disabled={loading && !rows.length}
             />
           </div>
@@ -231,7 +231,7 @@ export function VideosPage() {
                 <tr>
                   <th style={{ width: 72 }}>Thumb</th>
                   <th>Title</th>
-                  <th>Mentor</th>
+                  <th>Creator</th>
                   <th>Access</th>
                   <th>Promo</th>
                   <th>Created</th>
@@ -244,7 +244,7 @@ export function VideosPage() {
                     <td colSpan={7} className="text-muted text-center py-4">
                       {appliedSearch
                         ? "No videos match your search."
-                        : "No mentor videos found."}
+                        : "No creator videos found."}
                     </td>
                   </tr>
                 ) : (
@@ -433,7 +433,7 @@ export function VideosPage() {
                       }
                     />
                     <label className="form-check-label" htmlFor="video-is-promoted">
-                      Promote to top of learner Videos feed
+                      Promote to top of the Videos feed
                     </label>
                   </div>
                 </div>
@@ -470,7 +470,7 @@ export function VideosPage() {
       <ConfirmModal
         open={Boolean(deleteTarget)}
         title="Delete uploaded video"
-        body={`Permanently delete "${deleteTarget?.title || "this video"}" from the mentor library and storage.`}
+        body={`Permanently delete "${deleteTarget?.title || "this video"}" from the creator library and storage.`}
         confirmText="Delete video"
         onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}

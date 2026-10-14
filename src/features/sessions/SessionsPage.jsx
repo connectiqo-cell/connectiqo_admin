@@ -145,7 +145,7 @@ export function SessionsPage() {
         className="mb-3"
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search by room, mentor, learner, or status…"
+        placeholder="Search by room, creator, booked by, or status…"
         hint={searchHint}
         disabled={loading}
       />
@@ -169,8 +169,8 @@ export function SessionsPage() {
             <thead>
               <tr>
                 <th>Room</th>
-                <th>Mentor</th>
-                <th>Learner</th>
+                <th>Creator</th>
+                <th>Booked by</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th style={{ width: 120 }}>Actions</th>
@@ -208,7 +208,7 @@ export function SessionsPage() {
                         </button>
                         {row.mentor_id ? (
                           <Link className="btn btn-outline-primary" to={`/users/${row.mentor_id}`}>
-                            Mentor
+                            Creator
                           </Link>
                         ) : null}
                       </div>
