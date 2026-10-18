@@ -44,7 +44,6 @@ export function SessionsPage() {
     <div className="admin-card p-3 p-md-4">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h4 className="mb-1">VideoSDK Sessions</h4>
           <div className="text-muted small">Inspect all sessions from VideoSDK API.</div>
         </div>
         <button type="button" className="btn btn-outline-primary btn-sm" onClick={load} disabled={loading}>
@@ -58,7 +57,6 @@ export function SessionsPage() {
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search sessions by room, id, or status…"
         hint={searchHint}
-        disabled={loading}
       />
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
@@ -70,7 +68,12 @@ export function SessionsPage() {
       ) : (
         <DataTable
           rows={filteredRows}
-          visibleColumns={["start", "end", "roomId"]}
+          visibleColumns={[
+            { key: "start", label: "Started", kind: "datetime" },
+            { key: "end", label: "Ended", kind: "datetime" },
+            { key: "roomId", label: "Room" },
+            "status",
+          ]}
           onView={setViewingRow}
         />
       )}

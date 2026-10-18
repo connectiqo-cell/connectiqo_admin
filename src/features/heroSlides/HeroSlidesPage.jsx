@@ -13,11 +13,16 @@ import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
+import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+
+const MAX_UPLOAD_MB = 5;
 
 // ─── Edit Modal ───────────────────────────────────────────────────────────────
 function EditSlideModal({ open, slide, onClose, onSave }) {
-  const [position, setPosition]   = useState(0);
-  const [isActive, setIsActive]   = useState(true);
+  const [position, setPosition] = useState(0);
+  const [isActive, setIsActive] = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open, saving ? null : onClose);
 
   useEffect(() => {
     if (slide) {
@@ -26,35 +31,48 @@ function EditSlideModal({ open, slide, onClose, onSave }) {
     }
   }, [slide, open]);
 
-  if (!open || !slide) return null;
+  if (!isRendered || !slide) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave({ position, is_active: isActive });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="modal d-block" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }} tabIndex="-1">
-      <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 400 }}>
-        <div className="modal-content" style={{ background: "var(--admin-surface)", border: "1px solid var(--admin-border)", color: "var(--admin-text)" }}>
-          <div className="modal-header" style={{ borderColor: "var(--admin-border)" }}>
-            <h5 className="modal-title">Edit Slide</h5>
-            <button type="button" className="btn-close" style={{ filter: "invert(1) opacity(0.7)" }} onClick={onClose} />
+    <div className="modal modal-futuristic d-block" tabIndex="-1" role="dialog" aria-modal="true" aria-labelledby="edit-slide-title" ref={backdropRef}>
+      <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 420 }} role="document" ref={dialogRef}>
+        <form className="modal-content" onSubmit={handleSubmit}>
+          <div className="modal-header">
+            <h5 className="modal-title" id="edit-slide-title">Edit Slide</h5>
+            <button type="button" className="btn-close" onClick={onClose} disabled={saving} aria-label="Close" />
           </div>
-          <div className="modal-body d-grid gap-3">
+          <fieldset className="modal-body d-grid gap-3" disabled={saving}>
             <img
               src={slide.image_url}
-              alt="slide preview"
+              alt="Slide preview"
               style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 8 }}
             />
             <div>
-              <label className="form-label fw-semibold small" style={{ color: "var(--admin-muted)" }}>Position (lower = first)</label>
+              <label htmlFor="slide-position" className="form-label fw-semibold small">Position (lower = first)</label>
               <input
+                id="slide-position"
                 type="number"
                 className="form-control"
                 min={0}
                 value={position}
-                onChange={(e) => setPosition(Number(e.target.value))}
+                onChange={(e) => setPosition(Math.max(0, Number(e.target.value) || 0))}
               />
             </div>
-            <div className="form-check">
+            <div className="form-check form-switch">
               <input
                 type="checkbox"
+                role="switch"
                 className="form-check-input"
                 id="slide-active"
                 checked={isActive}
@@ -62,12 +80,14 @@ function EditSlideModal({ open, slide, onClose, onSave }) {
               />
               <label className="form-check-label" htmlFor="slide-active">Active (visible in app)</label>
             </div>
+          </fieldset>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? <><span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />Saving…</> : "Save"}
+            </button>
           </div>
-          <div className="modal-footer" style={{ borderColor: "var(--admin-border)" }}>
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => onSave({ position, is_active: isActive })}>Save</button>
-          </div>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -80,9 +100,19 @@ function UploadZone({ onUpload, uploading }) {
   const [file, setFile]         = useState(null);
   const [position, setPosition] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [fileError, setFileError] = useState("");
 
   const handleFile = (f) => {
-    if (!f || !f.type.startsWith("image/")) return;
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      setFileError(`"${f.name}" is not an image. Use PNG, JPG or WEBP.`);
+      return;
+    }
+    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setFileError(`"${f.name}" is ${(f.size / 1024 / 1024).toFixed(1)} MB — the limit is ${MAX_UPLOAD_MB} MB.`);
+      return;
+    }
+    setFileError("");
     setFile(f);
     setPreview(URL.createObjectURL(f));
   };
@@ -94,6 +124,7 @@ function UploadZone({ onUpload, uploading }) {
   };
 
   const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
     setFile(null);
     setPreview(null);
     setPosition(0);
@@ -112,8 +143,18 @@ function UploadZone({ onUpload, uploading }) {
       <p className="text-muted small mb-3">Images are uploaded to the <code>hero_slides</code> bucket and displayed as full-width slides in the app.</p>
 
       {!preview ? (
+        <>
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Choose an image to upload"
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           onDrop={handleDrop}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
@@ -129,7 +170,7 @@ function UploadZone({ onUpload, uploading }) {
         >
           <span className="material-icons" style={{ fontSize: 40, color: "var(--admin-muted)" }}>add_photo_alternate</span>
           <div className="mt-2 fw-semibold">Click or drag an image here</div>
-          <div className="text-muted small mt-1">PNG, JPG, WEBP supported</div>
+          <div className="text-muted small mt-1">PNG, JPG, WEBP · up to {MAX_UPLOAD_MB} MB</div>
           <input
             ref={inputRef}
             type="file"
@@ -138,6 +179,8 @@ function UploadZone({ onUpload, uploading }) {
             onChange={(e) => handleFile(e.target.files[0])}
           />
         </div>
+        {fileError ? <div className="alert alert-warning py-2 mt-2 mb-0 small" role="alert">{fileError}</div> : null}
+        </>
       ) : (
         <div className="row g-3 align-items-end">
           <div className="col-12 col-md-6">
@@ -189,6 +232,7 @@ export function HeroSlidesPage() {
   const [editSlide, setEditSlide] = useState(null);
   const [deleteSlide, setDeleteSlide] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [togglingId, setTogglingId] = useState(null);
 
   const filteredSlides = useMemo(
     () => filterRowsBySearch(slides, searchQuery, ["id", "position", "image_url", "is_active"]),
@@ -207,7 +251,7 @@ export function HeroSlidesPage() {
     } finally {
       setLoading(false);
     }
-  }, [config]);
+  }, [config, addToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -246,9 +290,14 @@ export function HeroSlidesPage() {
   const handleDelete = async () => {
     try {
       await deleteTableRow(config, "hero_slides", deleteSlide.id);
-      await deleteHeroSlideStorage(config, deleteSlide.storage_path);
       addLog({ action: "DELETE", entity: "hero_slides", environment, payload: deleteSlide });
-      addToast("Slide deleted");
+      try {
+        await deleteHeroSlideStorage(config, deleteSlide.storage_path);
+        addToast("Slide deleted");
+      } catch {
+        // The slide is already gone from the app; only the stored file lingers.
+        addToast("Slide removed, but its image file could not be deleted from storage", "info");
+      }
       setDeleteSlide(null);
       await load();
     } catch (err) {
@@ -257,6 +306,8 @@ export function HeroSlidesPage() {
   };
 
   const toggleActive = async (slide) => {
+    if (togglingId) return;
+    setTogglingId(slide.id);
     try {
       const updated = await updateTableRow(config, "hero_slides", slide.id, { is_active: !slide.is_active });
       addLog({ action: "UPDATE", entity: "hero_slides", environment, payload: updated });
@@ -264,6 +315,8 @@ export function HeroSlidesPage() {
       await load();
     } catch (err) {
       addToast(err.message || "Toggle failed", "error");
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -286,7 +339,6 @@ export function HeroSlidesPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search slides by position or id…"
           hint={searchHint}
-          disabled={loading}
         />
 
         {loading ? (
@@ -362,6 +414,7 @@ export function HeroSlidesPage() {
                     <button
                       className={`btn btn-sm btn-outline-${slide.is_active ? "warning" : "success"}`}
                       onClick={() => toggleActive(slide)}
+                      disabled={togglingId === slide.id}
                     >
                       {slide.is_active ? "Hide" : "Show"}
                     </button>

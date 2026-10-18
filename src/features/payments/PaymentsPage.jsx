@@ -1,325 +1,308 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import gsap from "gsap";
+import { useCallback, useEffect, useState } from "react";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
-import { listTableRows } from "../../services/adminApi.js";
+import { getPaymentSummary, updateTableRow } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
-import { TransactionControlPanel } from "./TransactionControlPanel.jsx";
-
-function transactionRupees(row) {
-  const paise = row.amount_total_paise ?? row.amount_total;
-  if (paise != null && paise !== "") return Number(paise) / 100;
-  const a = row.amount;
-  if (a != null && a !== "") return Number(a);
-  return 0;
-}
+import { useAudit } from "../../app/providers/AuditProvider.jsx";
+import { useToast } from "../../app/providers/ToastProvider.jsx";
+import { Badge } from "../../components/common/CellValue.jsx";
+import { formatInr, statusTone } from "../../utils/formatters.js";
+import { TransactionStatusModal, TX_STATUSES } from "./TransactionStatusModal.jsx";
 
 const PAYMENT_RESOURCES = [
   {
     id: "transactions",
     label: "Transactions",
     tableName: "transactions",
-    description: "Razorpay and booking payment lifecycle records.",
-    compactColumns: ["learner_id", "mentor_id", "amount_total_paise", "status", "admin_note"],
-    filterFields: [
-      { key: "status", label: "Status", options: ["all", "pending", "created", "initiated", "completed", "failed"] },
-    ],
-    searchColumns: ["status", "admin_note"],
+    description: "Razorpay checkout records. Use the ⇄ action to correct a status or add a note.",
+    compactColumns: ["learner_id", "mentor_id", "amount_total_paise", "status", "created_at", "admin_note"],
+    filterFields: [{ key: "status", label: "Status", options: ["all", ...TX_STATUSES] }],
+    searchColumns: ["status", "admin_note", "razorpay_order_id", "razorpay_payment_id"],
   },
   {
     id: "wallets",
-    label: "Mentor Wallets",
+    label: "Mentor wallets",
     tableName: "mentor_wallets",
     description: "Mentor balances, total earned, and withdrawals.",
-    compactColumns: ["id", "balance", "total_earned", "total_withdrawn"],
-    // No real text columns to search server-side here — falls back to a
-    // clearly-labeled "this page only" client-side search.
+    compactColumns: ["id", "balance", "total_earned", "total_withdrawn", "updated_at"],
   },
   {
     id: "earnings",
     label: "Earnings",
     tableName: "earnings",
-    description: "Session earnings linked to mentors and bookings.",
-    compactColumns: ["mentor_id", "booking_id", "amount", "status"],
-    filterFields: [
-      { key: "status", label: "Status", options: ["all", "pending", "unpaid", "paid"] },
-    ],
-    searchColumns: ["status"],
+    description: "Session earnings credited to mentors.",
+    compactColumns: ["mentor_id", "amount", "status", "source", "created_at"],
+    filterFields: [{ key: "status", label: "Status", options: ["all", "pending", "completed", "paid", "unpaid"] }],
+    searchColumns: ["status", "source", "notes"],
   },
   {
     id: "withdrawals",
     label: "Withdrawals",
     tableName: "withdrawal_requests",
     description: "Mentor payout requests — view, edit status, add admin notes.",
-    compactColumns: ["mentor_id", "amount", "status", "admin_note"],
-    filterFields: [
-      { key: "status", label: "Status", options: ["all", "pending", "approved", "rejected"] },
-    ],
-    searchColumns: ["status", "admin_note"],
+    compactColumns: ["mentor_id", "amount", "status", "payout_method", "created_at", "admin_note"],
+    filterFields: [{ key: "status", label: "Status", options: ["all", "pending", "approved", "rejected"] }],
+    searchColumns: ["status", "admin_note", "upi_id", "payout_reference"],
   },
 ];
 
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
+function SummaryCard({ label, value, icon, tone = "accent", note, title }) {
+  return (
+    <div className="col-12 col-sm-6 col-xl-3">
+      <div className={`admin-card admin-kpi-panel dashboard-kpi-card h-100 payments-kpi payments-kpi--${tone}`} title={title}>
+        <div className="dashboard-kpi-head">
+          <div className="admin-kpi-label">{label}</div>
+          <span className="dashboard-kpi-chip" aria-hidden="true">
+            <span className="material-icons">{icon}</span>
+          </span>
+        </div>
+        <div className="dashboard-kpi-value">{value}</div>
+        <small className="text-muted d-block">{note}</small>
+      </div>
+    </div>
+  );
+}
+
+function SummarySkeleton() {
+  return (
+    <div className="row g-3">
+      {[0, 1, 2, 3].map((i) => (
+        <div className="col-12 col-sm-6 col-xl-3" key={i}>
+          <div className="admin-card admin-kpi-panel p-3 dashboard-skeleton">
+            <div className="dashboard-skeleton__line dashboard-skeleton__line--sm" />
+            <div className="dashboard-skeleton__line dashboard-skeleton__line--lg mt-3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Collected money split into mentor share vs platform fee — real parts of one whole. */
+function CollectedSplit({ collected }) {
+  const total = collected.total || 0;
+  const parts = [
+    { key: "mentor", label: "Mentor share", value: collected.mentor, className: "split--mentor" },
+    { key: "platform", label: "Platform fees", value: collected.platform, className: "split--platform" },
+  ];
+  const other = Math.max(0, total - collected.mentor - collected.platform);
+  if (other > 0.005) parts.push({ key: "other", label: "Other / unallocated", value: other, className: "split--other" });
+
+  return (
+    <section className="admin-card p-3 p-md-4 h-100">
+      <h2 className="h6 mb-1">Where collected money goes</h2>
+      <p className="text-muted small mb-3">Split of {formatInr(total)} from paid transactions.</p>
+      {total > 0 ? (
+        <>
+          <div className="split-bar" role="img" aria-label={parts.map((p) => `${p.label} ${formatInr(p.value)}`).join(", ")}>
+            {parts.map((p) => (
+              <span key={p.key} className={`split-bar__part ${p.className}`} style={{ width: `${(p.value / total) * 100}%` }} />
+            ))}
+          </div>
+          <ul className="split-legend">
+            {parts.map((p) => (
+              <li key={p.key}>
+                <span className={`split-legend__dot ${p.className}`} aria-hidden="true" />
+                <span className="split-legend__label">{p.label}</span>
+                <span className="split-legend__value">{formatInr(p.value)}</span>
+                <span className="split-legend__pct">{((p.value / total) * 100).toFixed(1)}%</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="text-muted small mb-0">No paid transactions yet.</p>
+      )}
+    </section>
+  );
+}
+
+function StatusBreakdown({ byStatus }) {
+  const max = Math.max(...byStatus.map((s) => s.total), 1);
+  return (
+    <section className="admin-card p-3 p-md-4 h-100">
+      <h2 className="h6 mb-1">Transactions by status</h2>
+      <p className="text-muted small mb-3">Only “paid” counts as money received.</p>
+      {byStatus.length ? (
+        <ul className="status-bars">
+          {byStatus.map((s) => (
+            <li key={s.status}>
+              <div className="status-bars__row">
+                <Badge tone={statusTone(s.status)}>{s.status}</Badge>
+                <span className="text-muted small">{plural(s.count, "transaction")}</span>
+                <span className="status-bars__amount">{formatInr(s.total)}</span>
+              </div>
+              <div className="status-bars__track">
+                <span className={`status-bars__fill tone-${statusTone(s.status)}`} style={{ width: `${(s.total / max) * 100}%` }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted small mb-0">No transactions yet.</p>
+      )}
+    </section>
+  );
+}
+
 export function PaymentsPage() {
-  const { config: envConfig } = useEnvironment();
-  const analysisRef = useRef(null);
+  const { config, environment } = useEnvironment();
+  const { addLog } = useAudit();
+  const { addToast } = useToast();
   const [active, setActive] = useState(PAYMENT_RESOURCES[0].id);
-  const [transactions, setTransactions] = useState([]);
-  const [earnings, setEarnings] = useState([]);
-  const [wallets, setWallets] = useState([]);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisError, setAnalysisError] = useState("");
-  const config = PAYMENT_RESOURCES.find((item) => item.id === active) || PAYMENT_RESOURCES[0];
+  const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState("");
+  const [editingTx, setEditingTx] = useState(null); // { row, reload, people }
+  const resource = PAYMENT_RESOURCES.find((item) => item.id === active) || PAYMENT_RESOURCES[0];
+
+  const loadSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError("");
+    try {
+      setSummary(await getPaymentSummary(config));
+    } catch (error) {
+      setSummaryError(error.message || "Failed to load payment summary");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [config]);
 
   useEffect(() => {
-    const loadAnalysis = async () => {
-      setAnalysisLoading(true);
-      setAnalysisError("");
-      try {
-        const [tx, earn, wal] = await Promise.all([
-          listTableRows(envConfig, "transactions", 1000),
-          listTableRows(envConfig, "earnings", 1000),
-          listTableRows(envConfig, "mentor_wallets", 1000),
-        ]);
-        setTransactions(tx.rows || []);
-        setEarnings(earn.rows || []);
-        setWallets(wal.rows || []);
-      } catch (error) {
-        setAnalysisError(error.message || "Failed to load payment analysis");
-      } finally {
-        setAnalysisLoading(false);
-      }
-    };
+    loadSummary();
+  }, [loadSummary]);
 
-    loadAnalysis();
-  }, [envConfig]);
+  const saveTransaction = async (changes) => {
+    const { row, reload } = editingTx;
+    try {
+      const updated = await updateTableRow(config, "transactions", row.id, changes);
+      addLog({ action: "UPDATE", entity: "transactions", environment, payload: updated });
+      addToast(changes.status !== row.status ? `Transaction marked “${changes.status}”` : "Transaction note saved");
+      setEditingTx(null);
+      await Promise.all([reload(), loadSummary()]);
+    } catch (err) {
+      addToast(err.message || "Update failed", "error");
+      throw err;
+    }
+  };
 
-  const {
-    totalRevenue,
-    totalEarnings,
-    pendingPayments,
-    pendingEarnings,
-    statusTotals,
-    pieSegments,
-  } = useMemo(() => {
-    const toNumber = (value) => Number(value) || 0;
-
-    const revenue = transactions.reduce((sum, row) => sum + transactionRupees(row), 0);
-    const earningsTotal = earnings.reduce((sum, row) => sum + toNumber(row.amount), 0);
-
-    const pendingTx = transactions
-      .filter((row) => ["pending", "created", "initiated"].includes(String(row.status || "").toLowerCase()))
-      .reduce((sum, row) => sum + transactionRupees(row), 0);
-
-    const pendingEarn = earnings
-      .filter((row) => ["pending", "unpaid"].includes(String(row.status || "").toLowerCase()))
-      .reduce((sum, row) => sum + toNumber(row.amount), 0);
-
-    const grouped = {};
-    transactions.forEach((row) => {
-      const status = String(row.status || "unknown").toLowerCase();
-      grouped[status] = (grouped[status] || 0) + transactionRupees(row);
-    });
-    const statusRows = Object.entries(grouped)
-      .map(([status, amount]) => ({ status, amount }))
-      .sort((a, b) => b.amount - a.amount);
-
-    const pieData = [
-      { label: "Revenue", value: revenue, color: "#0d6efd" },
-      { label: "Earnings", value: earningsTotal, color: "#198754" },
-      { label: "Pending", value: pendingTx + pendingEarn, color: "#ffc107" },
-    ];
-
-    return {
-      totalRevenue: revenue,
-      totalEarnings: earningsTotal,
-      pendingPayments: pendingTx,
-      pendingEarnings: pendingEarn,
-      statusTotals: statusRows,
-      pieSegments: pieData,
-    };
-  }, [transactions, earnings]);
-
-  const fmt = (value) =>
-    `₹${new Intl.NumberFormat("en-IN", {
-      maximumFractionDigits: 2,
-    }).format(Number(value) || 0)}`;
-
-  const pieStyle = useMemo(() => {
-    const total = pieSegments.reduce((sum, segment) => sum + segment.value, 0) || 1;
-    const { parts } = pieSegments.reduce(
-      (acc, segment) => {
-        const start = (acc.cursor / total) * 360;
-        const nextCursor = acc.cursor + segment.value;
-        const end = (nextCursor / total) * 360;
-        return {
-          cursor: nextCursor,
-          parts: [...acc.parts, `${segment.color} ${start}deg ${end}deg`],
-        };
-      },
-      { cursor: 0, parts: [] }
-    );
-    return { background: `conic-gradient(${parts.join(", ")})` };
-  }, [pieSegments]);
-
-  const maxStatusAmount = Math.max(...statusTotals.map((item) => item.amount), 1);
-
-  useEffect(() => {
-    if (analysisLoading || !analysisRef.current) return;
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        ".payments-kpi",
-        { opacity: 0, y: 14, scale: 0.97 },
-        { opacity: 1, y: 0, scale: 1, duration: 0.35, stagger: 0.06, ease: "power2.out" }
-      );
-
-      gsap.utils.toArray(".payment-status-bar").forEach((bar) => {
-        const target = Number(bar.getAttribute("data-width") || 0);
-        gsap.fromTo(
-          bar,
-          { width: "0%" },
-          { width: `${target}%`, duration: 0.7, ease: "power3.out" }
-        );
-      });
-
-      gsap.fromTo(
-        ".payments-pie",
-        { opacity: 0, scale: 0.9, rotate: -20 },
-        { opacity: 1, scale: 1, rotate: 0, duration: 0.65, ease: "power3.out" }
-      );
-      gsap.fromTo(
-        ".payments-legend-item",
-        { opacity: 0, x: 10 },
-        { opacity: 1, x: 0, duration: 0.35, stagger: 0.05, ease: "power2.out", delay: 0.15 }
-      );
-    }, analysisRef);
-
-    return () => ctx.revert();
-  }, [analysisLoading, totalRevenue, totalEarnings, pendingPayments, pendingEarnings, statusTotals, pieStyle]);
+  const tx = summary?.transactions;
 
   return (
     <div className="d-grid gap-3">
-      <div className="admin-card p-3">
-        <h4 className="mb-2">Payments</h4>
-        <p className="text-muted mb-3">
-          Manage transactions, wallets, earnings, and withdrawal requests. Use Control payments when the
-          Transactions tab is active.
-        </p>
-        <div className="d-flex flex-wrap gap-2">
-          {PAYMENT_RESOURCES.map((item) => (
-            <button
-              key={item.id}
-              className={`btn btn-sm ${active === item.id ? "btn-primary" : "btn-outline-secondary"}`}
-              onClick={() => setActive(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+      {/* Overview */}
+      <section aria-labelledby="payments-overview">
+        <div className="dashboard-section-head mb-2">
+          <h2 id="payments-overview" className="h5 mb-0">Overview</h2>
+          <button type="button" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" onClick={loadSummary} disabled={summaryLoading}>
+            <span className={`material-icons ${summaryLoading ? "is-spinning" : ""}`} style={{ fontSize: 18 }} aria-hidden="true">refresh</span>
+            Refresh
+          </button>
         </div>
-      </div>
-
-      <div className="admin-card p-3 p-md-4" ref={analysisRef}>
-        <h5 className="mb-3">Payments Analysis</h5>
-        {analysisError ? <div className="alert alert-danger">{analysisError}</div> : null}
-        {analysisLoading ? <div className="text-muted">Loading analysis...</div> : null}
-
-        {!analysisLoading ? (
-          <>
-            <div className="row g-3 mb-4">
-              <div className="col-12 col-md-6 col-xl-3">
-                <div className="border rounded p-3 h-100 payments-kpi">
-                  <div className="text-muted small">Total Revenue</div>
-                  <div className="h4 mb-0">{fmt(totalRevenue)}</div>
-                </div>
-              </div>
-              <div className="col-12 col-md-6 col-xl-3">
-                <div className="border rounded p-3 h-100 payments-kpi">
-                  <div className="text-muted small">Total Earning</div>
-                  <div className="h4 mb-0">{fmt(totalEarnings)}</div>
-                </div>
-              </div>
-              <div className="col-12 col-md-6 col-xl-3">
-                <div className="border rounded p-3 h-100 payments-kpi">
-                  <div className="text-muted small">Payment Pending</div>
-                  <div className="h4 mb-0">{fmt(pendingPayments)}</div>
-                </div>
-              </div>
-              <div className="col-12 col-md-6 col-xl-3">
-                <div className="border rounded p-3 h-100 payments-kpi">
-                  <div className="text-muted small">Earning Pending</div>
-                  <div className="h4 mb-0">{fmt(pendingEarnings)}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="row g-4">
-              <div className="col-12 col-lg-7">
-                <h6 className="mb-3">Payments by Status</h6>
-                <div className="d-grid gap-2">
-                  {statusTotals.length ? (
-                    statusTotals.map((item) => (
-                      <div key={item.status}>
-                        <div className="d-flex justify-content-between small mb-1">
-                          <span className="text-capitalize">{item.status}</span>
-                          <span>{fmt(item.amount)}</span>
-                        </div>
-                        <div className="progress" role="progressbar" aria-label={item.status}>
-                          <div
-                            className="progress-bar payment-status-bar"
-                            data-width={(item.amount / maxStatusAmount) * 100}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-muted">No payment status data available.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="col-12 col-lg-5">
-                <h6 className="mb-3">Revenue Split (Pie)</h6>
-                <div className="d-flex align-items-center gap-3 flex-wrap">
-                  <div
-                    className="rounded-circle border payments-pie"
-                    style={{ width: 180, height: 180, ...pieStyle }}
-                  />
-                  <div className="d-grid gap-2">
-                    {pieSegments.map((segment) => (
-                      <div key={segment.label} className="d-flex align-items-center gap-2 payments-legend-item">
-                        <span
-                          style={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: "50%",
-                            backgroundColor: segment.color,
-                            display: "inline-block",
-                          }}
-                        />
-                        <span className="small">
-                          {segment.label}: <strong>{fmt(segment.value)}</strong>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 small text-muted">
-              Wallet records loaded: {wallets.length}
-            </div>
-          </>
+        {summaryError ? <div className="alert alert-danger">{summaryError}</div> : null}
+        {summaryLoading && !summary ? (
+          <SummarySkeleton />
+        ) : summary ? (
+          <div className="row g-3">
+            <SummaryCard
+              label="Collected"
+              icon="payments"
+              tone="success"
+              value={formatInr(tx.collected.total)}
+              note={plural(tx.collected.count, "paid transaction")}
+              title="Sum of transactions with status paid/completed"
+            />
+            <SummaryCard
+              label="Platform revenue"
+              icon="account_balance"
+              value={formatInr(tx.collected.platform)}
+              note="Platform fees from paid transactions"
+            />
+            <SummaryCard
+              label="Owed to mentors"
+              icon="account_balance_wallet"
+              tone="info"
+              value={formatInr(summary.wallets.balance)}
+              note={`Wallet balances · ${formatInr(summary.wallets.withdrawn)} withdrawn`}
+              title={`${plural(summary.wallets.count, "wallet")}. Pending withdrawal requests: ${formatInr(summary.withdrawals.pending.total)}`}
+            />
+            <SummaryCard
+              label="Unpaid checkouts"
+              icon="hourglass_empty"
+              tone="warning"
+              value={formatInr(tx.unpaid.total)}
+              note={`${plural(tx.unpaid.count, "checkout")} never completed — not money received`}
+            />
+          </div>
         ) : null}
-      </div>
+      </section>
 
-      {active === "transactions" ? <TransactionControlPanel /> : null}
+      {summary ? (
+        <div className="row g-3">
+          <div className="col-12 col-lg-6">
+            <CollectedSplit collected={tx.collected} />
+          </div>
+          <div className="col-12 col-lg-6">
+            <StatusBreakdown byStatus={tx.byStatus} />
+          </div>
+          <div className="col-12">
+            <p className="text-muted small mb-0">
+              Based on all {plural(tx.count, "transaction")}, {plural(summary.earnings.count, "earning")} and{" "}
+              {plural(summary.wallets.count, "wallet")}. Mentor earnings: {formatInr(summary.earnings.completed.total)} completed,{" "}
+              {formatInr(summary.earnings.pending.total)} pending.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Records */}
+      <div className="payments-tabs" role="tablist" aria-label="Payment records">
+        {PAYMENT_RESOURCES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={active === item.id}
+            className={`payments-tab ${active === item.id ? "is-active" : ""}`}
+            onClick={() => setActive(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
       <ResourceCrudPage
-        title={config.label}
-        tableName={config.tableName}
-        description={config.description}
-        compactColumns={config.compactColumns}
-        filterFields={config.filterFields}
-        searchColumns={config.searchColumns}
+        key={resource.id}
+        title={resource.label}
+        tableName={resource.tableName}
+        description={resource.description}
+        compactColumns={resource.compactColumns}
+        filterFields={resource.filterFields}
+        searchColumns={resource.searchColumns}
+        renderExtraActions={
+          resource.id === "transactions"
+            ? (row, reload, people) => (
+                <button
+                  type="button"
+                  className="table-action table-action--warning"
+                  onClick={() => setEditingTx({ row, reload, people })}
+                  title="Update status / note"
+                  aria-label="Update transaction status"
+                >
+                  <span className="material-icons" aria-hidden="true">sync_alt</span>
+                </button>
+              )
+            : null
+        }
+      />
+
+      <TransactionStatusModal
+        open={Boolean(editingTx)}
+        transaction={editingTx?.row}
+        people={editingTx?.people}
+        onClose={() => setEditingTx(null)}
+        onSave={saveTransaction}
       />
     </div>
   );

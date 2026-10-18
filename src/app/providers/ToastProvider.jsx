@@ -1,59 +1,43 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 
 const ToastContext = createContext(null);
 
 const ICONS = {
-  success: "✓",
-  error: "✕",
-  info: "i",
+  success: "check_circle",
+  error: "error",
+  info: "info",
 };
 
-const COLORS = {
-  success: "var(--admin-success)",
-  error: "#ef4444",
-  info: "var(--admin-accent-2)",
+// Errors stay longer: they usually need reading, not just noticing.
+const DURATION_MS = {
+  success: 3500,
+  info: 5000,
+  error: 7000,
 };
 
-function ToastContainer({ toasts }) {
-  if (!toasts.length) return null;
+const MAX_TOASTS = 4;
+
+function ToastContainer({ toasts, onDismiss }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 24,
-        right: 24,
-        zIndex: 9999,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        pointerEvents: "none",
-      }}
-    >
+    <div className="admin-toast-stack" aria-live="polite" aria-relevant="additions">
       {toasts.map((t) => (
         <div
           key={t.id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            background: "var(--admin-surface)",
-            border: `1px solid ${COLORS[t.type]}`,
-            borderLeft: `4px solid ${COLORS[t.type]}`,
-            borderRadius: 12,
-            padding: "10px 16px",
-            boxShadow: "var(--admin-shadow)",
-            color: "var(--admin-text)",
-            fontSize: 14,
-            minWidth: 240,
-            maxWidth: 360,
-            animation: "toastIn 0.25s ease",
-            pointerEvents: "auto",
-          }}
+          className={`admin-toast admin-toast--${t.type}`}
+          role={t.type === "error" ? "alert" : "status"}
         >
-          <span style={{ color: COLORS[t.type], fontWeight: 700, fontSize: 16 }}>
+          <span className="material-icons admin-toast__icon" aria-hidden="true">
             {ICONS[t.type]}
           </span>
-          {t.message}
+          <span className="admin-toast__message">{t.message}</span>
+          <button
+            type="button"
+            className="admin-toast__close"
+            onClick={() => onDismiss(t.id)}
+            aria-label="Dismiss notification"
+          >
+            <span className="material-icons" aria-hidden="true">close</span>
+          </button>
         </div>
       ))}
     </div>
@@ -62,19 +46,29 @@ function ToastContainer({ toasts }) {
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const timers = useRef(new Map());
 
-  const addToast = useCallback((message, type = "success") => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+  const dismiss = useCallback((id) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const addToast = useCallback(
+    (message, type = "success") => {
+      const id = Date.now() + Math.random();
+      setToasts((prev) => [...prev, { id, message, type }].slice(-MAX_TOASTS));
+      timers.current.set(id, setTimeout(() => dismiss(id), DURATION_MS[type] ?? 4000));
+    },
+    [dismiss]
+  );
+
+  const value = useMemo(() => ({ addToast }), [addToast]);
+
   return (
-    <ToastContext.Provider value={{ addToast }}>
+    <ToastContext.Provider value={value}>
       {children}
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </ToastContext.Provider>
   );
 }

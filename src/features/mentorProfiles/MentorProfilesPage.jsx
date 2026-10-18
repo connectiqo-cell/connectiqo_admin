@@ -5,6 +5,7 @@ export function MentorProfilesPage() {
   return (
     <ResourceCrudPage
       title="Mentor profiles"
+      hideTitle
       tableName="mentor_profiles"
       description="View and edit mentor-specific rows (rates, bio, category string, etc.)."
       fetchRows={(config, _tableName, options) => listMentorProfileRows(config, options)}

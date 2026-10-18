@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createTableRow,
   deleteTableRow,
   listTableRows,
+  PERSON_COLUMNS,
   updateTableRow,
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
@@ -13,6 +14,7 @@ import { JsonEditorModal } from "../../components/common/JsonEditorModal.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { RowDetailsModal } from "../../components/common/RowDetailsModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
+import { Pagination } from "../../components/common/Pagination.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
 
 const EXCLUDE_FROM_CREATE = ["id", "created_at", "updated_at"];
@@ -38,13 +40,17 @@ export function ResourceCrudPage({
    * filtering only the currently-loaded page, and is labeled as such.
    */
   searchColumns = null,
+  /** Hide the card heading when it would just repeat the top bar's page title. */
+  hideTitle = false,
 }) {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
   const { addToast } = useToast();
+  const cardRef = useRef(null);
 
   const [rows, setRows]             = useState([]);
   const [count, setCount]           = useState(0);
+  const [people, setPeople]         = useState({});
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
 
@@ -103,10 +109,12 @@ export function ResourceCrudPage({
         sortCol,
         sortDir,
         filters: activeFilters,
+        withPeople: true,
         ...(isServerSearch ? { search: searchDep, searchColumns } : {}),
       });
       setRows(result.rows);
       setCount(result.count);
+      setPeople(result.people || {});
     } catch (err) {
       setError(err.message || `Failed to load ${tableName}`);
     } finally {
@@ -196,7 +204,7 @@ export function ResourceCrudPage({
   const confirmFreeze = async () => {
     if (!freezeRow?.id) return;
     try {
-      const next = !Boolean(freezeRow.is_frozen);
+      const next = !freezeRow.is_frozen;
       const updated = await updateTableRow(config, "profiles", freezeRow.id, { is_frozen: next });
       addLog({ action: "UPDATE", entity: "profiles", environment, payload: { ...updated, _admin_action: next ? "freeze" : "unfreeze" } });
       addToast(`${freezeRow.name || "User"} ${next ? "frozen" : "unfrozen"}`);
@@ -214,19 +222,21 @@ export function ResourceCrudPage({
         <button
           key="freeze"
           type="button"
-          className={`btn btn-outline-${row.is_frozen ? "success" : "warning"}`}
+          className={`table-action table-action--${row.is_frozen ? "success" : "warning"}`}
           onClick={() => setFreezeRow(row)}
+          title={row.is_frozen ? "Unfreeze account" : "Freeze account"}
+          aria-label={`${row.is_frozen ? "Unfreeze" : "Freeze"} ${row.name || row.email || "account"}`}
         >
-          {row.is_frozen ? "Unfreeze" : "Freeze"}
+          <span className="material-icons" aria-hidden="true">{row.is_frozen ? "lock_open" : "ac_unit"}</span>
         </button>
       );
     }
     if (typeof renderExtraActions === "function") {
-      const custom = renderExtraActions(row, load);
+      const custom = renderExtraActions(row, load, people);
       if (custom) nodes.push(<span key="custom">{custom}</span>);
     }
     if (!nodes.length) return null;
-    return <span className="d-inline-flex flex-wrap gap-1 align-items-center">{nodes}</span>;
+    return <>{nodes}</>;
   };
 
   const showRowExtras =
@@ -240,25 +250,40 @@ export function ResourceCrudPage({
 
   const searchHint = isServerSearch
     ? (searchQuery.trim() ? `${count} matching record${count === 1 ? "" : "s"} found across all pages` : null)
-    : getSearchResultHint(filteredRows.length, rows.length, searchQuery);
+    : getSearchResultHint(filteredRows.length, rows.length, searchQuery, count);
 
-  // Pagination calc
-  const totalPages = rowLimit != null ? 1 : Math.max(1, Math.ceil(count / pageSize));
-  const rangeFrom  = rowLimit != null ? 1 : (page - 1) * pageSize + 1;
-  const rangeTo    = rowLimit != null ? count : Math.min(page * pageSize, count);
+  // Client-side search only sees what was loaded; say so when that isn't everything.
+  const isPartialLoad = count > rows.length;
+
+  const isPaginated = rowLimit == null;
+  const totalPages  = isPaginated ? Math.max(1, Math.ceil(count / pageSize)) : 1;
+
+  // e.g. deleting the last row on the last page: step back instead of showing an empty page.
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
+
+  const goToPage = (next) => {
+    setPage(next);
+    // Bring the top of the list back into view when paging from the bottom controls.
+    const top = cardRef.current?.getBoundingClientRect().top;
+    if (top != null && top < 0) cardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
-    <div className="admin-card p-3 p-md-4">
+    <div className="admin-card p-3 p-md-4" ref={cardRef}>
       {/* Header */}
       <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div>
-          <h4 className="mb-1">{title}</h4>
+          {hideTitle ? null : <h4 className="mb-1">{title}</h4>}
           <div className="text-muted small">{description}</div>
           {count > 0 && (
             <small className="text-muted">
               {searchQuery.trim() && filteredRows.length !== rows.length
                 ? `${filteredRows.length} of ${rows.length} on this page · ${count} total`
-                : `${count} total records`}
+                : rowLimit != null && isPartialLoad
+                  ? `Showing the first ${rows.length} of ${count} records`
+                  : `${count} total records`}
             </small>
           )}
         </div>
@@ -309,60 +334,57 @@ export function ResourceCrudPage({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={
-            isServerSearch
+            isServerSearch || !isPartialLoad
               ? `Search ${title.toLowerCase()}…`
-              : `Search ${title.toLowerCase()} (this page only)…`
+              : `Search ${title.toLowerCase()} (loaded records only)…`
           }
           hint={searchHint}
-          disabled={loading}
         />
       </div>
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
 
-      {/* Table */}
-      {loading ? (
-        <div className="d-flex align-items-center gap-2 text-muted py-3">
-          <div className="spinner-border spinner-border-sm" role="status" />
-          <span>Loading {title.toLowerCase()}...</span>
+      {/* Table — first load shows a spinner; later loads keep rows visible (dimmed) to avoid layout jumps */}
+      {loading && !rows.length ? (
+        <div className="d-flex align-items-center gap-2 text-muted py-3" role="status">
+          <div className="spinner-border spinner-border-sm" aria-hidden="true" />
+          <span>Loading {title.toLowerCase()}…</span>
         </div>
       ) : (
-        <DataTable
-          rows={filteredRows}
-          visibleColumns={compactColumns}
-          onView={setViewingRow}
-          onEdit={setEditingRow}
-          onDelete={setDeleteRow}
-          renderExtraActions={showRowExtras ? extraForRow : null}
-          sortCol={sortCol}
-          sortDir={sortDir}
-          onSort={handleSort}
-        />
+        <div className={`admin-table-loading-wrap ${loading ? "is-loading" : ""}`} aria-busy={loading}>
+          {loading ? (
+            <div className="admin-table-loading-indicator" role="status">
+              <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+              <span className="visually-hidden">Loading…</span>
+            </div>
+          ) : null}
+          <DataTable
+            rows={filteredRows}
+            visibleColumns={compactColumns}
+            onView={setViewingRow}
+            onEdit={setEditingRow}
+            onDelete={setDeleteRow}
+            renderExtraActions={showRowExtras ? extraForRow : null}
+            sortCol={sortCol}
+            sortDir={sortDir}
+            onSort={handleSort}
+            people={people}
+            personColumns={PERSON_COLUMNS[tableName]}
+          />
+        </div>
       )}
 
       {/* Pagination */}
-      {!loading && rowLimit == null && count > 0 ? (
-        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3 pt-2" style={{ borderTop: "1px solid var(--admin-border)" }}>
-          <div className="text-muted small">
-            {count > 0 ? `${rangeFrom}–${rangeTo} of ${count} records` : "No records"}
-          </div>
-          <div className="d-flex align-items-center gap-2">
-            <span className="text-muted small">Rows:</span>
-            <select
-              className="form-select form-select-sm"
-              style={{ width: 70 }}
-              value={pageSize}
-              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <button className="btn btn-sm btn-outline-secondary" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
-            <button className="btn btn-sm btn-outline-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</button>
-            <span className="small px-1">Page {page} / {totalPages}</span>
-            <button className="btn btn-sm btn-outline-secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>›</button>
-            <button className="btn btn-sm btn-outline-secondary" disabled={page >= totalPages} onClick={() => setPage(totalPages)}>»</button>
-          </div>
-        </div>
+      {isPaginated && count > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          count={count}
+          onPageChange={goToPage}
+          onPageSizeChange={handlePageSizeChange}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          disabled={loading}
+        />
       ) : null}
 
       {/* Modals */}
@@ -402,9 +424,11 @@ export function ResourceCrudPage({
       />
       <RowDetailsModal
         open={Boolean(viewingRow)}
-        title={`Row details: ${tableName}`}
+        title={viewingRow?.name || viewingRow?.email ? `${viewingRow.name || viewingRow.email}` : `${title} details`}
         data={viewingRow}
         fields={detailFields}
+        people={people}
+        personColumns={PERSON_COLUMNS[tableName]}
         onClose={() => setViewingRow(null)}
       />
     </div>

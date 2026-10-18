@@ -18,7 +18,6 @@ export function AuditLogPage() {
 
   return (
     <div className="admin-card p-3 p-md-4">
-      <h4 className="mb-1">Audit Logs</h4>
       <p className="text-muted small mb-3">All destructive and mutation actions are tracked here.</p>
 
       <SearchBar

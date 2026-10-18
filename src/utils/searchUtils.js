@@ -1,37 +1,43 @@
+/** Text for matching: values only (JSON keys like "name" would match every row). */
 function valueToSearchText(value) {
   if (value === null || value === undefined) return "";
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
+  if (Array.isArray(value)) return value.map(valueToSearchText).join(" ");
+  if (typeof value === "object") return Object.values(value).map(valueToSearchText).join(" ");
   return String(value);
 }
 
 /**
- * Client-side filter: matches query against row values (all columns or a subset).
+ * Client-side filter. Every word in the query must appear somewhere in the row
+ * (any column, any order), so "john gmail" matches name "John" + email "…@gmail.com".
  */
 export function filterRowsBySearch(rows, query, columns = null) {
   if (!Array.isArray(rows) || !rows.length) return rows || [];
-  const q = String(query || "").trim().toLowerCase();
-  if (!q) return rows;
+  const words = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return rows;
 
   return rows.filter((row) => {
     const cols =
       Array.isArray(columns) && columns.length
         ? columns
         : Object.keys(row || {});
-    return cols.some((col) => valueToSearchText(row[col]).toLowerCase().includes(q));
+    const haystack = cols.map((col) => valueToSearchText(row?.[col])).join(" ").toLowerCase();
+    return words.every((word) => haystack.includes(word));
   });
 }
 
-export function getSearchResultHint(filteredCount, totalCount, query) {
+/**
+ * @param filteredCount rows matching the query
+ * @param loadedCount   rows that were searched (loaded client-side)
+ * @param query         current search text
+ * @param totalCount    rows that exist server-side; when larger than loadedCount
+ *                      the hint warns that only the loaded rows were searched
+ */
+export function getSearchResultHint(filteredCount, loadedCount, query, totalCount = loadedCount) {
   const q = String(query || "").trim();
   if (!q) return null;
-  if (filteredCount === totalCount) {
-    return `${filteredCount} match${filteredCount === 1 ? "" : "es"} on this loaded page only — other pages are not searched`;
+  const matches = `${filteredCount} match${filteredCount === 1 ? "" : "es"}`;
+  if (totalCount > loadedCount) {
+    return `${matches} in the ${loadedCount} loaded records — ${totalCount - loadedCount} more not searched`;
   }
-  return `${filteredCount} of ${totalCount} on this loaded page only — other pages are not searched`;
+  return filteredCount === loadedCount ? matches : `${filteredCount} of ${loadedCount} records match`;
 }

@@ -90,7 +90,6 @@ export function RecordingsPage() {
       <div className="admin-card p-3 p-md-4">
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
           <div>
-            <h4 className="mb-1">VideoSDK Recordings</h4>
             <div className="text-muted small">Play, preview, or delete session recordings from VideoSDK.</div>
           </div>
           <button

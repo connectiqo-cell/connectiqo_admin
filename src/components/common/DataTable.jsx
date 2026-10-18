@@ -1,78 +1,130 @@
-export function DataTable({ rows, onView, onEdit, onDelete, visibleColumns, renderExtraActions, sortCol, sortDir, onSort }) {
+import { useMemo } from "react";
+import { humanizeKey, inferKind } from "../../utils/formatters.js";
+import { CellValue } from "./CellValue.jsx";
+
+/** Normalise column specs: "status" or { key, label?, kind?, render? }. */
+function useColumns(rows, visibleColumns, personColumns) {
+  return useMemo(() => {
+    const specs =
+      Array.isArray(visibleColumns) && visibleColumns.length
+        ? visibleColumns
+        : Object.keys(rows[0] || {});
+    return specs.map((spec) => {
+      const col = typeof spec === "string" ? { key: spec } : spec;
+      // Infer from the first non-empty value so a leading null doesn't hide the type.
+      const sample = rows.find((r) => r?.[col.key] !== null && r?.[col.key] !== undefined)?.[col.key];
+      return {
+        ...col,
+        label: col.label || personColumns?.[col.key] || humanizeKey(col.key),
+        kind: col.kind || inferKind(col.key, sample, personColumns),
+      };
+    });
+  }, [rows, visibleColumns, personColumns]);
+}
+
+const RIGHT_ALIGNED = new Set(["paise", "inr", "number", "percent"]);
+
+function ActionButton({ icon, label, tone, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`table-action table-action--${tone}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+    >
+      <span className="material-icons" aria-hidden="true">{icon}</span>
+    </button>
+  );
+}
+
+export function DataTable({
+  rows,
+  onView,
+  onEdit,
+  onDelete,
+  visibleColumns,
+  renderExtraActions,
+  sortCol,
+  sortDir,
+  onSort,
+  people = null,
+  personColumns = null,
+  rowLabel = (row) => row?.name || row?.email || "row",
+}) {
+  const columns = useColumns(rows || [], visibleColumns, personColumns);
+
   if (!rows?.length) {
     return (
       <div className="table-empty">
-        <span className="material-icons">inbox</span>
+        <span className="material-icons" aria-hidden="true">inbox</span>
         <span>No records found</span>
-        <small className="text-muted">Try adjusting filters or create a new row.</small>
+        <small className="text-muted">Try a different search or filter.</small>
       </div>
     );
   }
 
-  const inferredColumns = Object.keys(rows[0]);
-  const columns = Array.isArray(visibleColumns) && visibleColumns.length
-    ? visibleColumns
-    : inferredColumns;
-
-  const hasView    = typeof onView === "function";
-  const hasEdit    = typeof onEdit === "function";
-  const hasDelete  = typeof onDelete === "function";
-  const hasExtras  = typeof renderExtraActions === "function";
+  const hasView = typeof onView === "function";
+  const hasEdit = typeof onEdit === "function";
+  const hasDelete = typeof onDelete === "function";
+  const hasExtras = typeof renderExtraActions === "function";
   const hasActions = hasView || hasEdit || hasDelete || hasExtras;
   const hasSorting = typeof onSort === "function";
 
-  const handleSort = (col) => {
-    if (!hasSorting) return;
-    onSort(col);
-  };
-
   return (
     <div className="table-wrap">
-      <table className="table table-sm table-hover align-middle">
+      <table className="table table-sm table-hover align-middle admin-data-table">
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th
-                key={column}
-                style={{ whiteSpace: "nowrap", cursor: hasSorting ? "pointer" : "default", userSelect: "none" }}
-                onClick={() => handleSort(column)}
-              >
-                {column}
-                {hasSorting && (
-                  <span style={{ marginLeft: 5, opacity: sortCol === column ? 1 : 0.3, fontSize: "0.75rem" }}>
-                    {sortCol === column ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-                  </span>
-                )}
-              </th>
-            ))}
-            {hasActions ? <th style={{ width: hasExtras ? 280 : 200 }}>Actions</th> : null}
+            {columns.map((col) => {
+              const align = RIGHT_ALIGNED.has(col.kind) ? "text-end" : "";
+              const active = sortCol === col.key;
+              const ariaSort = active ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+              return (
+                <th key={col.key} className={align} aria-sort={hasSorting ? ariaSort : undefined}>
+                  {hasSorting && col.sortable !== false ? (
+                    <button
+                      type="button"
+                      className={`admin-sortable-th ${active ? "is-active" : ""}`}
+                      onClick={() => onSort(col.key)}
+                      title={`Sort by ${col.label}`}
+                    >
+                      {col.label}
+                      <span className="material-icons" aria-hidden="true">
+                        {active ? (sortDir === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}
+                      </span>
+                    </button>
+                  ) : (
+                    col.label
+                  )}
+                </th>
+              );
+            })}
+            {hasActions ? <th className="text-end table-actions-th">Actions</th> : null}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.id || index}>
-              {columns.map((column) => {
-                const raw = row[column];
-                let display;
-                if (raw === null || raw === undefined) {
-                  display = <span className="text-muted">—</span>;
-                } else if (typeof raw === "object") {
-                  display = <span className="text-muted fst-italic" title={JSON.stringify(raw)}>{"{…}"}</span>;
-                } else {
-                  const str = String(raw);
-                  display = str.length > 28
-                    ? <span title={str} style={{ cursor: "help" }}>{str.slice(0, 24)}…</span>
-                    : str;
-                }
-                return <td key={`${row.id || index}-${column}`}>{display}</td>;
-              })}
+              {columns.map((col) => (
+                <td
+                  key={`${row.id || index}-${col.key}`}
+                  className={`${RIGHT_ALIGNED.has(col.kind) ? "text-end" : ""} cell-kind-${col.kind}`}
+                >
+                  {col.render ? (
+                    col.render(row)
+                  ) : (
+                    <CellValue kind={col.kind} columnKey={col.key} value={row[col.key]} people={people} />
+                  )}
+                </td>
+              ))}
               {hasActions ? (
-                <td>
-                  <div className="btn-group btn-group-sm">
-                    {hasView   ? <button className="btn btn-outline-secondary" onClick={() => onView(row)}>View</button>   : null}
-                    {hasEdit   ? <button className="btn btn-outline-primary"   onClick={() => onEdit(row)}>Edit</button>   : null}
-                    {hasDelete ? <button className="btn btn-outline-danger"    onClick={() => onDelete(row)}>Delete</button> : null}
+                <td className="text-end">
+                  <div className="table-actions">
                     {hasExtras ? renderExtraActions(row) : null}
+                    {hasView ? <ActionButton icon="visibility" label={`View ${rowLabel(row)}`} tone="neutral" onClick={() => onView(row)} /> : null}
+                    {hasEdit ? <ActionButton icon="edit" label={`Edit ${rowLabel(row)}`} tone="primary" onClick={() => onEdit(row)} /> : null}
+                    {hasDelete ? <ActionButton icon="delete_outline" label={`Delete ${rowLabel(row)}`} tone="danger" onClick={() => onDelete(row)} /> : null}
                   </div>
                 </td>
               ) : null}
