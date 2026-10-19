@@ -9,35 +9,49 @@ import {
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { RecordingPlayerModal } from "../../components/common/RecordingPlayerModal.jsx";
+import { PaginationBar, paginateRows } from "../../components/common/PaginationBar.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
-import { canPlayRecording } from "../../utils/recording.js";
+import { getRecordingStatus, getRecordingStatusBadgeClass } from "../../utils/recording.js";
 
 export function RecordingsPage() {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
-  const [sdkRows, setSdkRows] = useState([]);
+  const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [playTarget, setPlayTarget] = useState(null);
   const [playLoadingId, setPlayLoadingId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const filteredRows = useMemo(
-    () => filterRowsBySearch(sdkRows, searchQuery, ["id", "roomId", "status", "sessionId"]),
-    [sdkRows, searchQuery]
+    () =>
+      filterRowsBySearch(rows, searchQuery, ["id", "roomId", "status", "sessionId"]),
+    [rows, searchQuery]
   );
 
-  const searchHint = getSearchResultHint(filteredRows.length, sdkRows.length, searchQuery);
+  const pageRows = useMemo(
+    () => paginateRows(filteredRows, page, pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const searchHint = getSearchResultHint(filteredRows.length, rows.length, searchQuery);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, pageSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const sdkRecordings = await listVideoSdkRecordings(config);
-      setSdkRows(sdkRecordings);
+      const next = await listVideoSdkRecordings(config);
+      setRows(next || []);
     } catch (err) {
-      setError(err.message || "Failed to load recordings");
+      setRows([]);
+      setError(err.message || "Failed to load VideoSDK recordings");
     } finally {
       setLoading(false);
     }
@@ -50,17 +64,11 @@ export function RecordingsPage() {
   const handlePlay = async (row) => {
     if (!row?.id) return;
 
-    if (canPlayRecording(row)) {
-      setPlayTarget(row);
-      return;
-    }
-
     setPlayLoadingId(row.id);
     setError("");
     try {
       const details = await getVideoSdkRecording(config, row.id);
-      const merged = { ...row, ...details, file: details?.file || row.file };
-      setPlayTarget(merged);
+      setPlayTarget({ ...row, ...details, file: details?.file || row.file });
     } catch (err) {
       setError(err.message || "Could not load recording for playback");
     } finally {
@@ -90,7 +98,9 @@ export function RecordingsPage() {
       <div className="admin-card p-3 p-md-4">
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
           <div>
-            <div className="text-muted small">Play, preview, or delete session recordings from VideoSDK.</div>
+            <div className="text-muted small">
+              VideoSDK cloud recordings. Play loads the file URL only when you click play.
+            </div>
           </div>
           <button
             type="button"
@@ -108,15 +118,15 @@ export function RecordingsPage() {
           className="mb-3"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search recordings by id, room, or status…"
+          placeholder="Search by id, room, status…"
           hint={searchHint}
-          disabled={loading && !sdkRows.length}
+          disabled={loading && !rows.length}
         />
 
-        {loading && !sdkRows.length ? (
+        {loading && !rows.length ? (
           <div className="d-flex align-items-center gap-2 text-muted py-3">
             <div className="spinner-border spinner-border-sm" role="status" />
-            <span>Loading recordings…</span>
+            <span>Loading VideoSDK recordings (can take up to a minute)…</span>
           </div>
         ) : (
           <div className="table-wrap">
@@ -134,14 +144,16 @@ export function RecordingsPage() {
                 {!filteredRows.length ? (
                   <tr>
                     <td colSpan={5} className="text-muted text-center py-4">
-                      {searchQuery.trim() ? "No recordings match your search." : "No recordings found."}
+                      {searchQuery.trim()
+                        ? "No recordings match your search."
+                        : "No VideoSDK recordings found."}
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row) => {
-                    const duration = row?.file?.meta?.duration;
-                    const playable = canPlayRecording(row);
+                  pageRows.map((row) => {
+                    const duration = row?.duration ?? row?.file?.meta?.duration;
                     const isPlayLoading = playLoadingId === row.id;
+                    const status = getRecordingStatus(row);
 
                     return (
                       <tr key={row.id}>
@@ -150,12 +162,8 @@ export function RecordingsPage() {
                         </td>
                         <td>{row.roomId || "—"}</td>
                         <td>
-                          <span
-                            className={`badge rounded-pill ${
-                              playable ? "text-bg-success" : "text-bg-secondary"
-                            }`}
-                          >
-                            {row.status || "—"}
+                          <span className={`badge rounded-pill ${getRecordingStatusBadgeClass(status)}`}>
+                            {status}
                           </span>
                         </td>
                         <td>
@@ -168,7 +176,7 @@ export function RecordingsPage() {
                               className="btn btn-outline-primary"
                               onClick={() => handlePlay(row)}
                               disabled={isPlayLoading}
-                              title={playable ? "Play recording" : "Load and play recording"}
+                              title="Load and play recording"
                             >
                               {isPlayLoading ? (
                                 <span
@@ -199,6 +207,17 @@ export function RecordingsPage() {
             </table>
           </div>
         )}
+
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          total={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
       </div>
 
       <RecordingPlayerModal

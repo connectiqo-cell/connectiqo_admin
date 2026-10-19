@@ -2,16 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createTableRow,
   deleteTableRow,
+  freezeMentor,
+  getAdminProfileDetail,
+  getTableRowById,
   listTableRows,
   PERSON_COLUMNS,
+  unfreezeMentor,
   updateTableRow,
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
+import { useAuth } from "../../app/providers/AuthProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
 import { DataTable } from "../../components/common/DataTable.jsx";
 import { JsonEditorModal } from "../../components/common/JsonEditorModal.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
+import { MentorFreezeModal } from "../../components/common/MentorFreezeModal.jsx";
+import { ProfileDetailsModal } from "../../components/common/ProfileDetailsModal.jsx";
 import { RowDetailsModal } from "../../components/common/RowDetailsModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { Pagination } from "../../components/common/Pagination.jsx";
@@ -25,9 +32,14 @@ export function ResourceCrudPage({
   tableName,
   description,
   compactColumns = null,
+  /** { column: "Header" } overrides for the table. */
+  columnLabels = null,
   detailFields = null,
   renderExtraActions = null,
+  /** Full login ban (profiles.is_frozen). */
   enableProfileFreeze = false,
+  /** Creator-side timed freeze (hides profile/videos, keeps customer access). */
+  enableMentorFreeze = false,
   rowLimit = null,
   /** e.g. [{ key: "status", label: "Status", options: ["all","pending","completed","failed"] }] */
   filterFields = null,
@@ -42,10 +54,24 @@ export function ResourceCrudPage({
   searchColumns = null,
   /** Hide the card heading when it would just repeat the top bar's page title. */
   hideTitle = false,
+  /** Hide Create/Edit/Delete — use when a dedicated control panel owns mutations. */
+  readOnly = false,
+  /** When set, fetch and open this row's details (e.g. deep-link from reports). */
+  openRowId = null,
+  /** Called after the deep-linked details modal is closed. */
+  onOpenRowHandled = null,
+  /** Rich moderation profile panel instead of generic row details. */
+  enableRichProfileView = false,
+  /** Override View button (e.g. navigate to /users/:id). */
+  onViewRow = null,
+  /** Show real column names (Database Explorer). */
+  rawColumnLabels = false,
 }) {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
   const { addToast } = useToast();
+  const { session } = useAuth();
+  const operator = session?.user?.email || "admin";
   const cardRef = useRef(null);
 
   const [rows, setRows]             = useState([]);
@@ -85,7 +111,11 @@ export function ResourceCrudPage({
   const [viewingRow, setViewingRow]   = useState(null);
   const [deleteRow, setDeleteRow]     = useState(null);
   const [createOpen, setCreateOpen]   = useState(false);
-  const [freezeRow, setFreezeRow]     = useState(null);
+  const [banRow, setBanRow]           = useState(null);
+  const [mentorFreezeRow, setMentorFreezeRow] = useState(null);
+  const [mentorFreezeBusy, setMentorFreezeBusy] = useState(false);
+  const [profileDetail, setProfileDetail] = useState(null);
+  const [profileDetailLoading, setProfileDetailLoading] = useState(false);
 
   // Reset everything when table changes (Database Explorer)
   useEffect(() => {
@@ -123,6 +153,67 @@ export function ResourceCrudPage({
   }, [config, tableName, rowLimit, page, pageSize, sortCol, sortDir, activeFilters, fetchRows, isServerSearch, searchDep, searchColumns]);
 
   useEffect(() => { load(); }, [load]);
+
+  const openRichProfile = useCallback(
+    async (idOrRow) => {
+      const id = typeof idOrRow === "object" ? idOrRow?.id : idOrRow;
+      if (!id) return;
+      setViewingRow(typeof idOrRow === "object" ? idOrRow : { id });
+      setProfileDetailLoading(true);
+      setProfileDetail(null);
+      try {
+        const detail = await getAdminProfileDetail(config, id);
+        if (!detail) {
+          addToast("Profile not found", "error");
+          setViewingRow(null);
+          onOpenRowHandled?.();
+          return;
+        }
+        setProfileDetail(detail);
+      } catch (err) {
+        addToast(err.message || "Failed to open profile", "error");
+        setViewingRow(null);
+        onOpenRowHandled?.();
+      } finally {
+        setProfileDetailLoading(false);
+      }
+    },
+    [config, addToast, onOpenRowHandled]
+  );
+
+  // Deep-link: open a specific row's details (e.g. /users?id=…)
+  useEffect(() => {
+    if (!openRowId) return;
+    let cancelled = false;
+
+    const openLinkedRow = async () => {
+      if (enableRichProfileView) {
+        if (!cancelled) await openRichProfile(openRowId);
+        return;
+      }
+      try {
+        const row = await getTableRowById(config, tableName, openRowId);
+        if (cancelled) return;
+        if (row) {
+          setViewingRow(row);
+        } else {
+          addToast("Record not found", "error");
+          onOpenRowHandled?.();
+        }
+      } catch (err) {
+        if (cancelled) return;
+        addToast(err.message || "Failed to open record", "error");
+        onOpenRowHandled?.();
+      }
+    };
+
+    openLinkedRow();
+    return () => {
+      cancelled = true;
+    };
+    // Only reopen when the target id changes, not when callback identities change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRowId, tableName, config, enableRichProfileView]);
 
   // Column sort: toggle asc/desc, reset page
   const handleSort = (col) => {
@@ -201,33 +292,115 @@ export function ResourceCrudPage({
     }
   };
 
-  const confirmFreeze = async () => {
-    if (!freezeRow?.id) return;
+  const openMentorFreeze = async (row) => {
+    setMentorFreezeBusy(true);
     try {
-      const next = !freezeRow.is_frozen;
-      const updated = await updateTableRow(config, "profiles", freezeRow.id, { is_frozen: next });
-      addLog({ action: "UPDATE", entity: "profiles", environment, payload: { ...updated, _admin_action: next ? "freeze" : "unfreeze" } });
-      addToast(`${freezeRow.name || "User"} ${next ? "frozen" : "unfrozen"}`);
-      setFreezeRow(null);
-      await load();
+      const mentorRow = await getTableRowById(config, "mentor_profiles", row.id);
+      setMentorFreezeRow({
+        id: row.id,
+        name: row.name || mentorRow?.name,
+        email: row.email || mentorRow?.email,
+        mentor_frozen: mentorRow?.mentor_frozen === true,
+        mentor_frozen_until: mentorRow?.mentor_frozen_until ?? null,
+        mentor_freeze_reason: mentorRow?.mentor_freeze_reason ?? null,
+      });
     } catch (err) {
-      addToast(err.message || "Freeze toggle failed", "error");
+      addToast(err.message || "Could not load creator freeze status", "error");
+    } finally {
+      setMentorFreezeBusy(false);
+    }
+  };
+
+  const refreshOpenProfile = async (id) => {
+    if (enableRichProfileView && (viewingRow?.id === id || profileDetail?.profile?.id === id)) {
+      await openRichProfile(id);
+    }
+  };
+
+  const confirmBanLogin = async () => {
+    if (!banRow?.id) return;
+    try {
+      const next = !banRow.is_frozen;
+      const updated = await updateTableRow(config, "profiles", banRow.id, { is_frozen: next });
+      addLog({
+        action: "UPDATE",
+        entity: "profiles",
+        environment,
+        payload: { ...updated, _admin_action: next ? "ban_login" : "unban_login" },
+      });
+      addToast(`${banRow.name || "User"} ${next ? "banned from login" : "login restored"}`);
+      const id = banRow.id;
+      setBanRow(null);
+      await load();
+      await refreshOpenProfile(id);
+    } catch (err) {
+      addToast(err.message || "Ban toggle failed", "error");
+    }
+  };
+
+  const confirmMentorFreeze = async (row, { until, reason }) => {
+    setMentorFreezeBusy(true);
+    try {
+      const updated = await freezeMentor(config, row.id, { until, reason, operator });
+      addLog({ action: "UPDATE", entity: "mentor_profiles", environment, payload: { ...updated, _admin_action: "mentor_freeze" } });
+      addToast(`${row.name || "Creator"} frozen`);
+      setMentorFreezeRow(null);
+      await load();
+      await refreshOpenProfile(row.id);
+    } catch (err) {
+      addToast(err.message || "Creator freeze failed", "error");
+    } finally {
+      setMentorFreezeBusy(false);
+    }
+  };
+
+  const confirmMentorUnfreeze = async (row) => {
+    setMentorFreezeBusy(true);
+    try {
+      const updated = await unfreezeMentor(config, row.id, operator);
+      addLog({ action: "UPDATE", entity: "mentor_profiles", environment, payload: { ...updated, _admin_action: "mentor_unfreeze" } });
+      addToast(`${row.name || "Creator"} restored`);
+      setMentorFreezeRow(null);
+      await load();
+      await refreshOpenProfile(row.id);
+    } catch (err) {
+      addToast(err.message || "Creator unfreeze failed", "error");
+    } finally {
+      setMentorFreezeBusy(false);
     }
   };
 
   const extraForRow = (row) => {
     const nodes = [];
-    if (enableProfileFreeze && tableName === "profiles") {
+    if (enableMentorFreeze) {
+      const frozen =
+        row.mentor_frozen === true &&
+        (!row.mentor_frozen_until || new Date(row.mentor_frozen_until).getTime() > Date.now());
       nodes.push(
         <button
-          key="freeze"
+          key="mentor-freeze"
           type="button"
-          className={`table-action table-action--${row.is_frozen ? "success" : "warning"}`}
-          onClick={() => setFreezeRow(row)}
-          title={row.is_frozen ? "Unfreeze account" : "Freeze account"}
-          aria-label={`${row.is_frozen ? "Unfreeze" : "Freeze"} ${row.name || row.email || "account"}`}
+          className={`table-action table-action--${frozen ? "success" : "warning"}`}
+          onClick={() => openMentorFreeze(row)}
+          disabled={mentorFreezeBusy}
+          title={frozen ? "Unfreeze creator" : "Freeze creator (hide profile & videos)"}
+          aria-label={`${frozen ? "Unfreeze" : "Freeze"} creator ${row.name || row.email || ""}`.trim()}
         >
-          <span className="material-icons" aria-hidden="true">{row.is_frozen ? "lock_open" : "ac_unit"}</span>
+          <span className="material-icons" aria-hidden="true">{frozen ? "lock_open" : "ac_unit"}</span>
+        </button>
+      );
+    }
+    if (enableProfileFreeze && (tableName === "profiles" || tableName === "mentor_profiles")) {
+      nodes.push(
+        <button
+          key="ban-login"
+          type="button"
+          className={`table-action table-action--${row.is_frozen ? "success" : "danger"}`}
+          onClick={() => setBanRow(row)}
+          title={row.is_frozen ? "Restore login" : "Ban login (full account)"}
+          aria-label={`${row.is_frozen ? "Restore login for" : "Ban login for"} ${row.name || row.email || "account"}`}
+        >
+          <span className="material-icons" aria-hidden="true">{row.is_frozen ? "how_to_reg" : "block"}</span>
         </button>
       );
     }
@@ -240,7 +413,8 @@ export function ResourceCrudPage({
   };
 
   const showRowExtras =
-    (enableProfileFreeze && tableName === "profiles") ||
+    enableMentorFreeze ||
+    (enableProfileFreeze && (tableName === "profiles" || tableName === "mentor_profiles")) ||
     typeof renderExtraActions === "function";
 
   const filteredRows = useMemo(
@@ -291,9 +465,11 @@ export function ResourceCrudPage({
           <button className="btn btn-outline-primary btn-sm" onClick={load} disabled={loading}>
             Refresh
           </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
-            + Create Row
-          </button>
+          {!readOnly ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
+              + Create
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -361,9 +537,17 @@ export function ResourceCrudPage({
           <DataTable
             rows={filteredRows}
             visibleColumns={compactColumns}
-            onView={setViewingRow}
-            onEdit={setEditingRow}
-            onDelete={setDeleteRow}
+            columnLabels={columnLabels}
+            rawColumnLabels={rawColumnLabels}
+            onView={
+              typeof onViewRow === "function"
+                ? onViewRow
+                : enableRichProfileView
+                  ? openRichProfile
+                  : setViewingRow
+            }
+            onEdit={readOnly ? null : setEditingRow}
+            onDelete={readOnly ? null : setDeleteRow}
             renderExtraActions={showRowExtras ? extraForRow : null}
             sortCol={sortCol}
             sortDir={sortDir}
@@ -411,26 +595,54 @@ export function ResourceCrudPage({
         onConfirm={confirmDelete}
       />
       <ConfirmModal
-        open={Boolean(freezeRow)}
-        title={freezeRow?.is_frozen ? "Unfreeze account?" : "Freeze account?"}
+        open={Boolean(banRow)}
+        title={banRow?.is_frozen ? "Restore login?" : "Ban login (full account)?"}
         body={
-          freezeRow?.is_frozen
-            ? `Restore sign-in access for "${freezeRow?.name || freezeRow?.email}".`
-            : `Block sign-in for "${freezeRow?.name || freezeRow?.email}". They won't be able to log in until unfrozen.`
+          banRow?.is_frozen
+            ? `Restore sign-in access for "${banRow?.name || banRow?.email}".`
+            : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer creator freeze unless you need a full ban.`
         }
-        confirmText={freezeRow?.is_frozen ? "Unfreeze" : "Freeze"}
-        onCancel={() => setFreezeRow(null)}
-        onConfirm={confirmFreeze}
+        confirmText={banRow?.is_frozen ? "Restore login" : "Ban login"}
+        variant={banRow?.is_frozen ? "primary" : "danger"}
+        onCancel={() => setBanRow(null)}
+        onConfirm={confirmBanLogin}
       />
-      <RowDetailsModal
-        open={Boolean(viewingRow)}
-        title={viewingRow?.name || viewingRow?.email ? `${viewingRow.name || viewingRow.email}` : `${title} details`}
-        data={viewingRow}
-        fields={detailFields}
-        people={people}
-        personColumns={PERSON_COLUMNS[tableName]}
-        onClose={() => setViewingRow(null)}
+      <MentorFreezeModal
+        open={Boolean(mentorFreezeRow)}
+        row={mentorFreezeRow}
+        busy={mentorFreezeBusy}
+        onCancel={() => setMentorFreezeRow(null)}
+        onConfirmFreeze={confirmMentorFreeze}
+        onConfirmUnfreeze={confirmMentorUnfreeze}
       />
+      {enableRichProfileView ? (
+        <ProfileDetailsModal
+          open={Boolean(viewingRow)}
+          detail={profileDetail}
+          loading={profileDetailLoading}
+          onClose={() => {
+            setViewingRow(null);
+            setProfileDetail(null);
+            if (openRowId && String(viewingRow?.id) === String(openRowId)) onOpenRowHandled?.();
+          }}
+          onBanLogin={(profile) => setBanRow(profile)}
+          onFreezeMentor={(profile) => openMentorFreeze({ id: profile.id, name: profile.name, email: profile.email })}
+        />
+      ) : (
+        <RowDetailsModal
+          open={Boolean(viewingRow)}
+          title={viewingRow?.name || viewingRow?.email ? `${viewingRow.name || viewingRow.email}` : `${title} details`}
+          data={viewingRow}
+          fields={detailFields}
+          people={people}
+          personColumns={PERSON_COLUMNS[tableName]}
+          rawLabels={rawColumnLabels}
+          onClose={() => {
+            setViewingRow(null);
+            if (openRowId && String(viewingRow?.id) === String(openRowId)) onOpenRowHandled?.();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -31,7 +31,7 @@ describe("DataTable", () => {
   it("shows readable headers and values", () => {
     render(<DataTable rows={profiles} visibleColumns={["name", "is_frozen", { key: "role", kind: "status" }]} />);
     expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
-    expect(screen.getByText("Frozen")).toBeTruthy();
+    expect(screen.getByText("Banned")).toBeTruthy();
     expect(screen.getByText("Active")).toBeTruthy();
     expect(screen.getByText("mentor")).toBeTruthy();
   });

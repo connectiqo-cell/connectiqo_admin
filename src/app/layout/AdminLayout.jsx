@@ -3,11 +3,9 @@ import { Outlet, useLocation } from "react-router-dom";
 import gsap from "gsap";
 import { getNavItemByPath } from "../../utils/navigation.js";
 import { useTheme } from "../providers/ThemeProvider.jsx";
-import { useEnvironment } from "../providers/EnvironmentProvider.jsx";
 import { useAuth } from "../providers/AuthProvider.jsx";
 import { BrandLogo } from "../../components/common/BrandLogo.jsx";
 import { SidebarNav } from "../../components/layout/SidebarNav.jsx";
-import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { UserMenu } from "../../components/layout/UserMenu.jsx";
 import { ErrorBoundary } from "../../components/common/ErrorBoundary.jsx";
 
@@ -37,10 +35,8 @@ export function AdminLayout() {
   const shellRef = useRef(null);
   const routeRef = useRef(null);
   const { theme, toggleTheme } = useTheme();
-  const { environment, switchEnvironment } = useEnvironment();
   const { session, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [pendingEnv, setPendingEnv] = useState(null);
   // Desktop-only icon rail; the mobile drawer ignores this.
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
@@ -59,6 +55,111 @@ export function AdminLayout() {
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
+
+  // Side-scroll strips: wheel → horizontal, click-drag / slide → horizontal (taps still work)
+  useEffect(() => {
+    const SELECTOR = ".admin-h-scroll, .table-wrap";
+    let drag = null;
+    let suppressClick = false;
+
+    const findScroller = (node) =>
+      node instanceof Element ? node.closest(SELECTOR) : null;
+
+    const canScrollX = (el) => el.scrollWidth > el.clientWidth + 1;
+
+    const normalizeDelta = (event, el) => {
+      let dy = event.deltaY;
+      if (event.deltaMode === 1) dy *= 16;
+      else if (event.deltaMode === 2) dy *= el.clientHeight || 1;
+      return dy;
+    };
+
+    const onWheel = (event) => {
+      const target = findScroller(event.target);
+      if (!target || !canScrollX(target)) return;
+      // Native trackpad horizontal already works
+      if (!event.shiftKey && Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const dy = normalizeDelta(event, target);
+      if (!dy) return;
+      event.preventDefault();
+      target.scrollLeft += dy;
+    };
+
+    const onPointerDown = (event) => {
+      if (event.button !== 0 || event.pointerType === "touch") return;
+      const target = findScroller(event.target);
+      if (!target || !canScrollX(target)) return;
+      // Keep native caret / select UX
+      if (event.target.closest?.("input, textarea, select, option")) return;
+
+      drag = {
+        el: target,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        scrollLeft: target.scrollLeft,
+        moved: false,
+      };
+    };
+
+    const onPointerMove = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      if (!drag.moved) {
+        if (Math.abs(dx) < 8) return;
+        drag.moved = true;
+        drag.el.classList.add("is-drag-scrolling");
+        try {
+          drag.el.setPointerCapture(event.pointerId);
+        } catch {
+          /* ignore */
+        }
+      }
+      event.preventDefault();
+      drag.el.scrollLeft = drag.scrollLeft - dx;
+    };
+
+    const endDrag = (event) => {
+      if (!drag) return;
+      if (event && event.pointerId !== drag.pointerId) return;
+      const { el, moved } = drag;
+      drag = null;
+      el.classList.remove("is-drag-scrolling");
+      try {
+        el.releasePointerCapture?.(event?.pointerId);
+      } catch {
+        /* ignore */
+      }
+      if (moved) {
+        suppressClick = true;
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+      }
+    };
+
+    const onClickCapture = (event) => {
+      if (!suppressClick) return;
+      if (!findScroller(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointermove", onPointerMove, { passive: false, capture: true });
+    document.addEventListener("pointerup", endDrag, true);
+    document.addEventListener("pointercancel", endDrag, true);
+    document.addEventListener("click", onClickCapture, true);
+
+    return () => {
+      document.removeEventListener("wheel", onWheel, { capture: true });
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointermove", onPointerMove, { capture: true });
+      document.removeEventListener("pointerup", endDrag, true);
+      document.removeEventListener("pointercancel", endDrag, true);
+      document.removeEventListener("click", onClickCapture, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!shellRef.current || reducedMotion()) return;
@@ -92,13 +193,6 @@ export function AdminLayout() {
 
   const pageTitle = getNavItemByPath(pathname)?.label || "Panel";
   const closeSidebar = () => setSidebarOpen(false);
-
-  // Switching into production is the risky direction, so it asks first.
-  const requestEnvironment = (next) => {
-    if (next === environment) return;
-    if (next === "production") setPendingEnv(next);
-    else switchEnvironment(next);
-  };
 
   return (
     <div className={`admin-shell ${collapsed ? "admin-shell--collapsed" : ""}`} ref={shellRef}>
@@ -165,21 +259,14 @@ export function AdminLayout() {
               </div>
             </div>
 
-            <div className="admin-topbar__actions">
-              <label className={`admin-topbar-control admin-env-switch admin-env-switch--${environment}`}>
+            <div className="admin-topbar__actions admin-h-scroll">
+<span
+                className="admin-topbar-control admin-env-switch admin-env-switch--production"
+                title="Connected to the production database"
+              >
                 <span className="admin-env-switch__dot" aria-hidden="true" />
-                <span className="visually-hidden">Environment</span>
-                <select
-                  className="admin-env-switch__select"
-                  value={environment}
-                  onChange={(e) => requestEnvironment(e.target.value)}
-                  title="Data environment"
-                >
-                  <option value="staging">Staging</option>
-                  <option value="production">Production</option>
-                </select>
-                <span className="material-icons admin-env-switch__caret" aria-hidden="true">expand_more</span>
-              </label>
+                Production
+              </span>
 
               <button
                 type="button"
@@ -207,18 +294,6 @@ export function AdminLayout() {
         </div>
       </div>
 
-      <ConfirmModal
-        open={Boolean(pendingEnv)}
-        title="Switch to Production?"
-        body="You'll be viewing and editing live data. If you haven't signed in to Production in this browser, you'll be asked to sign in."
-        confirmText="Switch to Production"
-        variant="primary"
-        onCancel={() => setPendingEnv(null)}
-        onConfirm={() => {
-          switchEnvironment(pendingEnv);
-          setPendingEnv(null);
-        }}
-      />
     </div>
   );
 }

@@ -216,7 +216,7 @@ export function PlatformFeesPage() {
           <div className="col-12 col-md-6">
             <div className="rounded p-3 d-grid gap-2" style={{ background: "var(--admin-surface-2)", border: "1px solid var(--admin-border)" }}>
               <div className="d-flex justify-content-between">
-                <span className="text-muted small">Session fee (mentor earns)</span>
+                <span className="text-muted small">Session fee (creator earns)</span>
                 <span className="fw-semibold">{fmt(calc.price)}</span>
               </div>
               <div className="d-flex justify-content-between">
@@ -229,12 +229,12 @@ export function PlatformFeesPage() {
               </div>
               <hr style={{ borderColor: "var(--admin-border)", margin: "4px 0" }} />
               <div className="d-flex justify-content-between">
-                <span className="fw-semibold">Total payable (learner pays)</span>
+                <span className="fw-semibold">Total payable (customer pays)</span>
                 <span className="fw-bold" style={{ color: "#6366f1" }}>{fmt(calc.learner)}</span>
               </div>
               <hr style={{ borderColor: "var(--admin-border)", margin: "4px 0" }} />
               <div className="d-flex justify-content-between">
-                <span className="text-muted small">Mentor receives</span>
+                <span className="text-muted small">Creator receives</span>
                 <span className="fw-semibold" style={{ color: "var(--admin-success)" }}>{fmt(calc.mentor)}</span>
               </div>
               <div className="d-flex justify-content-between">
@@ -247,8 +247,8 @@ export function PlatformFeesPage() {
           {/* Summary stats */}
           <div className="col-12 col-md-6 d-grid gap-2">
             {[
-              { label: "Learner pays",     value: calc.learner,       pct: calc.learner ? 100 : 0,                                                    color: "#6366f1" },
-              { label: "Mentor receives",  value: calc.mentor,        pct: calc.learner ? (calc.mentor / calc.learner * 100).toFixed(1) : 0,         color: "var(--admin-success)" },
+              { label: "Customer pays",     value: calc.learner,       pct: calc.learner ? 100 : 0,                                                    color: "#6366f1" },
+              { label: "Creator receives",  value: calc.mentor,        pct: calc.learner ? (calc.mentor / calc.learner * 100).toFixed(1) : 0,         color: "var(--admin-success)" },
               { label: "Platform revenue", value: calc.fee,           pct: calc.learner ? (calc.fee / calc.learner * 100).toFixed(1) : 0,            color: "var(--admin-accent-2)" },
               { label: "GST collected",    value: calc.gstOnFee,      pct: calc.learner ? (calc.gstOnFee / calc.learner * 100).toFixed(1) : 0,       color: "var(--admin-muted)" },
             ].map((item) => (

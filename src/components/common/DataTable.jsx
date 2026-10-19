@@ -3,7 +3,7 @@ import { humanizeKey, inferKind } from "../../utils/formatters.js";
 import { CellValue } from "./CellValue.jsx";
 
 /** Normalise column specs: "status" or { key, label?, kind?, render? }. */
-function useColumns(rows, visibleColumns, personColumns) {
+function useColumns(rows, visibleColumns, personColumns, columnLabels, rawColumnLabels) {
   return useMemo(() => {
     const specs =
       Array.isArray(visibleColumns) && visibleColumns.length
@@ -15,11 +15,14 @@ function useColumns(rows, visibleColumns, personColumns) {
       const sample = rows.find((r) => r?.[col.key] !== null && r?.[col.key] !== undefined)?.[col.key];
       return {
         ...col,
-        label: col.label || personColumns?.[col.key] || humanizeKey(col.key),
+        label:
+          col.label ||
+          columnLabels?.[col.key] ||
+          (rawColumnLabels ? humanizeKey(col.key, { raw: true }) : personColumns?.[col.key] || humanizeKey(col.key)),
         kind: col.kind || inferKind(col.key, sample, personColumns),
       };
     });
-  }, [rows, visibleColumns, personColumns]);
+  }, [rows, visibleColumns, personColumns, columnLabels, rawColumnLabels]);
 }
 
 const RIGHT_ALIGNED = new Set(["paise", "inr", "number", "percent"]);
@@ -50,9 +53,13 @@ export function DataTable({
   onSort,
   people = null,
   personColumns = null,
+  /** { column: "Header" } overrides (e.g. is_frozen → "Login"). */
+  columnLabels = null,
+  /** Show real column names (Database Explorer). */
+  rawColumnLabels = false,
   rowLabel = (row) => row?.name || row?.email || "row",
 }) {
-  const columns = useColumns(rows || [], visibleColumns, personColumns);
+  const columns = useColumns(rows || [], visibleColumns, personColumns, columnLabels, rawColumnLabels);
 
   if (!rows?.length) {
     return (

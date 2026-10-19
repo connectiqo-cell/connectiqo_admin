@@ -7,9 +7,9 @@ import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useAuth } from "../../app/providers/AuthProvider.jsx";
 
 const PLATFORM_KPIS = [
-  { label: "Total Users", key: "usersCount", icon: "people", to: "/users", hint: "Learner & user profiles" },
+  { label: "Total Users", key: "usersCount", icon: "people", to: "/users", hint: "All user profiles" },
   { label: "Bookings", key: "bookingsCount", icon: "event", to: "/bookings", hint: "All booking records" },
-  { label: "Mentors", key: "mentorsCount", icon: "school", to: "/mentor-profiles", hint: "Active mentor profiles" },
+  { label: "Creators", key: "mentorsCount", icon: "school", to: "/users", hint: "Creator profiles" },
 ];
 
 const VIDEO_KPIS = [
@@ -22,8 +22,10 @@ const VIDEO_COL = "col-12 col-sm-6";
 
 const QUICK_ACTIONS = [
   { to: "/users", label: "Manage Profiles", icon: "people", desc: "View & edit user accounts" },
+  { to: "/reports", label: "Reports", icon: "flag", desc: "Profile, video, booking & call reports" },
   { to: "/bookings", label: "Bookings", icon: "event", desc: "Sessions & scheduling" },
   { to: "/payments", label: "Payments", icon: "payments", desc: "Transactions & wallets" },
+  { to: "/withdrawals", label: "Withdrawals", icon: "account_balance_wallet", desc: "Payout queue & fulfilment" },
   { to: "/database", label: "Database", icon: "storage", desc: "Direct table access" },
   { to: "/hero-slides", label: "Hero Slides", icon: "view_carousel", desc: "Homepage carousel" },
   { to: "/audit-logs", label: "Audit Logs", icon: "history", desc: "Admin activity trail" },

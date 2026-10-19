@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { getPaymentSummary, updateTableRow } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
@@ -20,28 +21,19 @@ const PAYMENT_RESOURCES = [
   },
   {
     id: "wallets",
-    label: "Mentor wallets",
+    label: "Creator wallets",
     tableName: "mentor_wallets",
-    description: "Mentor balances, total earned, and withdrawals.",
+    description: "Creator balances, total earned, and withdrawals.",
     compactColumns: ["id", "balance", "total_earned", "total_withdrawn", "updated_at"],
   },
   {
     id: "earnings",
     label: "Earnings",
     tableName: "earnings",
-    description: "Session earnings credited to mentors.",
+    description: "Session earnings credited to creators.",
     compactColumns: ["mentor_id", "amount", "status", "source", "created_at"],
     filterFields: [{ key: "status", label: "Status", options: ["all", "pending", "completed", "paid", "unpaid"] }],
     searchColumns: ["status", "source", "notes"],
-  },
-  {
-    id: "withdrawals",
-    label: "Withdrawals",
-    tableName: "withdrawal_requests",
-    description: "Mentor payout requests — view, edit status, add admin notes.",
-    compactColumns: ["mentor_id", "amount", "status", "payout_method", "created_at", "admin_note"],
-    filterFields: [{ key: "status", label: "Status", options: ["all", "pending", "approved", "rejected"] }],
-    searchColumns: ["status", "admin_note", "upi_id", "payout_reference"],
   },
 ];
 
@@ -83,7 +75,7 @@ function SummarySkeleton() {
 function CollectedSplit({ collected }) {
   const total = collected.total || 0;
   const parts = [
-    { key: "mentor", label: "Mentor share", value: collected.mentor, className: "split--mentor" },
+    { key: "mentor", label: "Creator share", value: collected.mentor, className: "split--mentor" },
     { key: "platform", label: "Platform fees", value: collected.platform, className: "split--platform" },
   ];
   const other = Math.max(0, total - collected.mentor - collected.platform);
@@ -220,7 +212,7 @@ export function PaymentsPage() {
               note="Platform fees from paid transactions"
             />
             <SummaryCard
-              label="Owed to mentors"
+              label="Owed to creators"
               icon="account_balance_wallet"
               tone="info"
               value={formatInr(summary.wallets.balance)}
@@ -249,8 +241,9 @@ export function PaymentsPage() {
           <div className="col-12">
             <p className="text-muted small mb-0">
               Based on all {plural(tx.count, "transaction")}, {plural(summary.earnings.count, "earning")} and{" "}
-              {plural(summary.wallets.count, "wallet")}. Mentor earnings: {formatInr(summary.earnings.completed.total)} completed,{" "}
-              {formatInr(summary.earnings.pending.total)} pending.
+              {plural(summary.wallets.count, "wallet")}. Creator earnings: {formatInr(summary.earnings.completed.total)} completed,{" "}
+              {formatInr(summary.earnings.pending.total)} pending. Payout requests are handled on the{" "}
+              <Link to="/withdrawals">Withdrawals</Link> page.
             </p>
           </div>
         </div>

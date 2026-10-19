@@ -93,7 +93,8 @@ describe("badges", () => {
   });
 
   it("words boolean flags by meaning", () => {
-    expect(booleanBadge("is_frozen", true)).toEqual({ text: "Frozen", tone: "danger" });
+    expect(booleanBadge("is_frozen", true)).toEqual({ text: "Banned", tone: "danger" });
+    expect(booleanBadge("mentor_frozen", true)).toEqual({ text: "Frozen", tone: "warning" });
     expect(booleanBadge("is_frozen", false)).toEqual({ text: "Active", tone: "success" });
     expect(booleanBadge("is_active", false).text).toBe("Inactive");
     expect(booleanBadge("route_enabled", true).text).toBe("Yes");

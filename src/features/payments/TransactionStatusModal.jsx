@@ -54,7 +54,7 @@ export function TransactionStatusModal({ open, transaction, people, onClose, onS
           <fieldset className="modal-body d-grid gap-3" disabled={saving}>
             <dl className="details-list mb-0">
               <div className="details-list__item"><dt>Amount</dt><dd className="fw-semibold">{formatPaise(transaction.amount_total_paise)}</dd></div>
-              <div className="details-list__item"><dt>Learner → Mentor</dt><dd>{nameOf(transaction.learner_id)} → {nameOf(transaction.mentor_id)}</dd></div>
+              <div className="details-list__item"><dt>Booked by → Creator</dt><dd>{nameOf(transaction.learner_id)} → {nameOf(transaction.mentor_id)}</dd></div>
               <div className="details-list__item"><dt>Created</dt><dd>{formatDateTime(transaction.created_at)}</dd></div>
               {transaction.razorpay_payment_id ? (
                 <div className="details-list__item"><dt>Razorpay payment</dt><dd><code>{transaction.razorpay_payment_id}</code></dd></div>

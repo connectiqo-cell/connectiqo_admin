@@ -4,7 +4,7 @@ import { getRecordingFileUrl, getRecordingMediaType } from "../../utils/recordin
 
 export function RecordingPlayerModal({ open, recording, onClose }) {
   const [playbackError, setPlaybackError] = useState("");
-  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open);
+  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open, onClose);
   const mediaRef = useRef(null);
 
   const fileUrl = getRecordingFileUrl(recording);

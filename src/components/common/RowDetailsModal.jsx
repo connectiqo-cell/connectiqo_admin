@@ -88,7 +88,17 @@ function DetailValue({ fieldKey, label, value, people, personColumns }) {
   return <span className="text-break" style={{ whiteSpace: "pre-wrap" }}>{formatPlain(kind, value)}</span>;
 }
 
-export function RowDetailsModal({ open, title, data, onClose, fields = null, people = null, personColumns = null }) {
+export function RowDetailsModal({
+  open,
+  title,
+  data,
+  onClose,
+  fields = null,
+  people = null,
+  personColumns = null,
+  /** Show real column names (Database Explorer). */
+  rawLabels = false,
+}) {
   const { isRendered, backdropRef, dialogRef } = useModalAnimation(open, onClose);
   const titleId = useId();
 
@@ -97,7 +107,10 @@ export function RowDetailsModal({ open, title, data, onClose, fields = null, peo
   const displayFields =
     Array.isArray(fields) && fields.length
       ? fields
-      : Object.keys(data || {}).map((key) => ({ key, label: personColumns?.[key] || humanizeKey(key) }));
+      : Object.keys(data || {}).map((key) => ({
+          key,
+          label: rawLabels ? humanizeKey(key, { raw: true }) : personColumns?.[key] || humanizeKey(key),
+        }));
 
   return (
     <div

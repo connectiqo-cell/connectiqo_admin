@@ -14,18 +14,18 @@ const LABEL_OVERRIDES = {
   is_active: "Status",
   is_booked: "Booked",
   amount_total_paise: "Amount",
-  mentor_earning_paise: "Mentor earning",
+  mentor_earning_paise: "Creator earning",
   platform_fee_paise: "Platform fee",
   created_at: "Created",
   updated_at: "Updated",
   deleted_at: "Deleted",
   paid_at: "Paid",
-  learner_id: "Learner",
-  mentor_id: "Mentor",
-  mentor_name: "Mentor",
-  learner_name: "Learner",
-  mentor_email: "Mentor email",
-  learner_email: "Learner email",
+  learner_id: "Booked by",
+  mentor_id: "Creator",
+  mentor_name: "Creator",
+  learner_name: "Booked by",
+  mentor_email: "Creator email",
+  learner_email: "Booked by email",
   price_per_hour: "Price / hr",
   sort_order: "Sort",
   avatar_url: "Avatar",
@@ -44,8 +44,25 @@ const LABEL_OVERRIDES = {
   x_url: "X (Twitter)",
 };
 
-/** "amount_total_paise" → "Amount total", "booking_id" → "Booking", "is_booked" → "Booked". */
-export function humanizeKey(key) {
+/** Product wording: the app's mentors are "creators", learners are who "booked". */
+const ROLE_WORDS = [
+  [/\bmentors\b/gi, "creators"],
+  [/\bmentor\b/gi, "creator"],
+  [/\blearners\b/gi, "customers"],
+  [/\blearner\b/gi, "booked by"],
+];
+
+function applyRoleWords(text) {
+  const replaced = ROLE_WORDS.reduce((acc, [pattern, word]) => acc.replace(pattern, word), text);
+  return replaced.charAt(0).toUpperCase() + replaced.slice(1);
+}
+
+/**
+ * "amount_total_paise" → "Amount", "booking_id" → "Booking", "mentor_frozen_until" → "Creator frozen until".
+ * With `raw`, shows the real column name in title case (Database Explorer).
+ */
+export function humanizeKey(key, { raw = false } = {}) {
+  if (raw) return String(key).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (LABEL_OVERRIDES[key]) return LABEL_OVERRIDES[key];
   const words = String(key)
     .replace(/^is_/, "")
@@ -53,8 +70,7 @@ export function humanizeKey(key) {
     .split("_")
     .filter(Boolean);
   if (!words.length) return key;
-  const text = words.join(" ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return applyRoleWords(words.join(" "));
 }
 
 /**
@@ -170,9 +186,10 @@ export function statusTone(status) {
 export function booleanBadge(key, value) {
   const on = Boolean(value);
   switch (key) {
-    case "is_frozen":
-    case "mentor_frozen":
-      return on ? { text: "Frozen", tone: "danger" } : { text: "Active", tone: "success" };
+    case "is_frozen": // full login ban
+      return on ? { text: "Banned", tone: "danger" } : { text: "Active", tone: "success" };
+    case "mentor_frozen": // creator freeze (profile/videos hidden)
+      return on ? { text: "Frozen", tone: "warning" } : { text: "Active", tone: "success" };
     case "is_active":
       return on ? { text: "Active", tone: "success" } : { text: "Inactive", tone: "neutral" };
     case "is_booked":

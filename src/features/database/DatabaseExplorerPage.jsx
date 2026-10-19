@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
+import { HScroll } from "../../components/common/HScroll.jsx";
 import { ALLOWED_TABLES, TABLE_SEARCH_COLUMNS } from "../../services/adminApi.js";
 
 const SELECTABLE_TABLES = [...ALLOWED_TABLES].sort();
@@ -47,7 +48,7 @@ export function DatabaseExplorerPage() {
           placeholder="Filter tables…"
           aria-label="Filter tables"
         />
-        <div className="d-flex flex-wrap gap-2 mt-3">
+        <HScroll className="mt-3">
           {visibleTables.map((table) => (
             <button
               key={table}
@@ -62,7 +63,7 @@ export function DatabaseExplorerPage() {
           {!visibleTables.length ? (
             <span className="text-muted small align-self-center">No allowed tables match.</span>
           ) : null}
-        </div>
+        </HScroll>
       </div>
 
       {isAllowed ? (
@@ -73,6 +74,7 @@ export function DatabaseExplorerPage() {
           tableName={tableName}
           description={`Direct CRUD access to the selected table. ${searchDescription(tableName)}`}
           searchColumns={searchColumnsFor(tableName)}
+          rawColumnLabels
         />
       ) : (
         <div className="alert alert-danger mb-0">

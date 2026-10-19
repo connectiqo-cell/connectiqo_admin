@@ -403,7 +403,7 @@ export function CategoriesPage() {
       {/* Header */}
       <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div>
-          <div className="text-muted small">Manage categories shown to mentors and learners. Lower sort order = appears first.</div>
+          <div className="text-muted small">Manage categories shown to creators. Lower sort order = appears first.</div>
           <small className="text-muted">{count} total categories</small>
         </div>
         <div className="d-flex gap-2">

@@ -37,7 +37,11 @@ const LoginPage = page(() => import("../../features/auth/LoginPage.jsx"), "Login
 const DashboardPage = page(() => import("../../features/dashboard/DashboardPage.jsx"), "DashboardPage");
 const DatabaseExplorerPage = page(() => import("../../features/database/DatabaseExplorerPage.jsx"), "DatabaseExplorerPage");
 const UsersPage = page(() => import("../../features/users/UsersPage.jsx"), "UsersPage");
-const MentorProfilesPage = page(() => import("../../features/mentorProfiles/MentorProfilesPage.jsx"), "MentorProfilesPage");
+const UserProfilePage = page(() => import("../../features/users/UserProfilePage.jsx"), "UserProfilePage");
+const ReportsPage = page(() => import("../../features/reports/ReportsPage.jsx"), "ReportsPage");
+const WithdrawalsPage = page(() => import("../../features/withdrawals/WithdrawalsPage.jsx"), "WithdrawalsPage");
+const TrendingCreatorsPage = page(() => import("../../features/trending/TrendingCreatorsPage.jsx"), "TrendingCreatorsPage");
+const VideosPage = page(() => import("../../features/videos/VideosPage.jsx"), "VideosPage");
 const BookingsPage = page(() => import("../../features/bookings/BookingsPage.jsx"), "BookingsPage");
 const PaymentsPage = page(() => import("../../features/payments/PaymentsPage.jsx"), "PaymentsPage");
 const PlatformFeesPage = page(() => import("../../features/platformFees/PlatformFeesPage.jsx"), "PlatformFeesPage");
@@ -88,13 +92,17 @@ export function AppRouter() {
         <Route index element={<DashboardPage />} />
         <Route path="database" element={<DatabaseExplorerPage />} />
         <Route path="users" element={<UsersPage />} />
-        <Route path="mentor-profiles" element={<MentorProfilesPage />} />
+        <Route path="users/:userId" element={<UserProfilePage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="bookings" element={<BookingsPage />} />
         <Route path="payments" element={<PaymentsPage />} />
+        <Route path="withdrawals" element={<WithdrawalsPage />} />
         <Route path="platform-fees" element={<PlatformFeesPage />} />
         <Route path="categories" element={<CategoriesPage />} />
         <Route path="hero-slides" element={<HeroSlidesPage />} />
+        <Route path="trending" element={<TrendingCreatorsPage />} />
         <Route path="sessions" element={<SessionsPage />} />
+        <Route path="videos" element={<VideosPage />} />
         <Route path="recordings" element={<RecordingsPage />} />
         <Route path="audit-logs" element={<AuditLogPage />} />
       </Route>
