@@ -536,6 +536,9 @@ body,
 
 /* Cards */
 .admin-card {
+  /* Lets a card shrink inside flex/grid layouts so wide tables scroll inside it
+     instead of stretching the whole page past the screen. */
+  min-width: 0;
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
   border-radius: var(--admin-radius);
@@ -2683,4 +2686,17 @@ body[data-theme="dark"] .payments-kpi--warning .dashboard-kpi-chip { color: #fbb
 
 .error-boundary__details summary {
   cursor: pointer;
+}
+
+/* ─── Layout guards (restored after merge) ───────────────────────────────── */
+/* Page-level grids: children may shrink, so wide content scrolls in place. */
+.admin-route-content .d-grid > * {
+  min-width: 0;
+}
+
+/* The top-bar controls fit without scrolling; a scroll container here would
+   clip the account menu dropdown. */
+.admin-topbar__actions {
+  overflow: visible;
+  flex-wrap: wrap;
 }

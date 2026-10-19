@@ -259,7 +259,7 @@ export function AdminLayout() {
               </div>
             </div>
 
-            <div className="admin-topbar__actions admin-h-scroll">
+            <div className="admin-topbar__actions">
 <span
                 className="admin-topbar-control admin-env-switch admin-env-switch--production"
                 title="Connected to the production database"
