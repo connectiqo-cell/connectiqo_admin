@@ -16,7 +16,13 @@ export function installFakeSupabase(tables = {}) {
     const offset = Number(url.searchParams.get("offset") || 0);
     const limit = Number(url.searchParams.get("limit") || rows.length);
     const page = rows.slice(offset, offset + limit);
-    requests.push({ table, url, params: url.searchParams, method: init.method || "GET" });
+    let body = null;
+    try {
+      body = init.body ? JSON.parse(init.body) : null;
+    } catch {
+      body = init.body;
+    }
+    requests.push({ table, url, params: url.searchParams, method: init.method || "GET", body });
 
     const end = page.length ? offset + page.length - 1 : offset;
     return new Response(JSON.stringify(page), {

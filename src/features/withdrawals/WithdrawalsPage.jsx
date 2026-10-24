@@ -9,6 +9,7 @@ import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { MinWithdrawalCard } from "./MinWithdrawalCard.jsx";
 
 // Admin auth here is a hardcoded email/password check, not real Supabase auth
 // (see AuthProvider.jsx) — the service-role key is what actually authorizes
@@ -308,6 +309,14 @@ export function WithdrawalsPage() {
           accent="bg-info-subtle text-info-emphasis"
         />
       </div>
+
+      <MinWithdrawalCard
+        config={config}
+        environment={environment}
+        operator={operator}
+        addLog={addLog}
+        addToast={addToast}
+      />
 
       <div className="admin-card p-3 p-md-4">
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">

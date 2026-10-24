@@ -937,6 +937,48 @@ export async function getPaymentSummary(config) {
   };
 }
 
+/** Largest minimum an admin may set (₹10,00,000) — guards against a stray extra zero. */
+export const MAX_MIN_WITHDRAWAL = 1000000;
+
+/**
+ * Payout settings (single row, id = true). Returns null when the payout_settings
+ * table doesn't exist yet (migration 20261024000000 not applied).
+ * The minimum is enforced server-side by deduct_wallet_for_withdrawal.
+ */
+export async function getPayoutSettings(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("payout_settings")
+    .select("min_withdrawal_amount, updated_at, updated_by")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) {
+    // 42P01 = undefined table (Postgres); PGRST205 = table not in PostgREST schema cache.
+    if (error.code === "42P01" || error.code === "PGRST205") return null;
+    throw error;
+  }
+  return data ? { ...data, min_withdrawal_amount: Number(data.min_withdrawal_amount) } : null;
+}
+
+/** Set the minimum withdrawal (whole rupees). Admin-only via RLS (is_admin()). */
+export async function updateMinWithdrawal(config, amount, operator) {
+  const value = Number(amount);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_MIN_WITHDRAWAL) {
+    throw new Error(`Minimum must be a whole number of rupees between ₹1 and ₹${MAX_MIN_WITHDRAWAL.toLocaleString("en-IN")}`);
+  }
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("payout_settings")
+    .update({ min_withdrawal_amount: value, updated_at: new Date().toISOString(), updated_by: operator || null })
+    .eq("id", true)
+    .select("min_withdrawal_amount, updated_at, updated_by")
+    .maybeSingle();
+  if (error) throw error;
+  // RLS silently matches zero rows for non-admins instead of erroring.
+  if (!data) throw new Error("Not saved — your account isn't allowed to change payout settings.");
+  return { ...data, min_withdrawal_amount: Number(data.min_withdrawal_amount) };
+}
+
 export async function listDashboardStats(config) {
   const [profiles, bookings, mentorProfiles] = await Promise.all([
     listTableRows(config, "profiles", 1),
