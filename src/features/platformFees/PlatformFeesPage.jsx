@@ -6,14 +6,25 @@ import {
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
+import { useAudit } from "../../app/providers/AuditProvider.jsx";
+import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
+
+function validatePercent(raw, label) {
+  if (String(raw).trim() === "") return `${label} is required.`;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `${label} must be a number.`;
+  if (n < 0 || n > 100) return `${label} must be between 0 and 100.`;
+  return "";
+}
 
 function fmt(value) {
   return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Number(value) || 0)}`;
 }
 
 export function PlatformFeesPage() {
-  const { config } = useEnvironment();
+  const { config, environment } = useEnvironment();
   const { addToast } = useToast();
+  const { addLog } = useAudit();
 
   const [globalRule, setGlobalRule]   = useState(null);
   const [loading, setLoading]         = useState(false);
@@ -25,6 +36,13 @@ export function PlatformFeesPage() {
 
   // Real-time calculator
   const [sessionPrice, setSessionPrice] = useState("1000");
+  const [confirmOpen, setConfirmOpen]   = useState(false);
+
+  const feeError = validatePercent(platformFee, "Platform fee");
+  const gstError = validatePercent(gst, "GST");
+  const savedFee = globalRule ? String(globalRule.platform_fee_percent ?? "") : null;
+  const savedGst = globalRule ? String(globalRule.gst_percent ?? "") : null;
+  const isDirty  = !globalRule || Number(platformFee) !== Number(savedFee) || Number(gst) !== Number(savedGst);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +65,7 @@ export function PlatformFeesPage() {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
+    if (feeError || gstError) return;
     setSaving(true);
     setError("");
     try {
@@ -57,12 +76,15 @@ export function PlatformFeesPage() {
         notes: "Global default",
       };
       if (globalRule?.id) {
-        await updateTableRow(config, "platform_fee_rules", globalRule.id, payload);
+        const updated = await updateTableRow(config, "platform_fee_rules", globalRule.id, payload);
+        addLog({ action: "UPDATE", entity: "platform_fee_rules", environment, payload: updated });
         addToast("Platform fees updated");
       } else {
-        await createTableRow(config, "platform_fee_rules", payload);
+        const created = await createTableRow(config, "platform_fee_rules", payload);
+        addLog({ action: "CREATE", entity: "platform_fee_rules", environment, payload: created });
         addToast("Platform fee rule created");
       }
+      setConfirmOpen(false);
       await load();
     } catch (err) {
       setError(err.message || "Failed to save");
@@ -90,7 +112,7 @@ export function PlatformFeesPage() {
 
       {/* Fee Settings */}
       <div className="admin-card p-3 p-md-4">
-        <h4 className="mb-1">Platform Fee Settings</h4>
+        <h5 className="mb-1">Fee rates</h5>
         <p className="text-muted small mb-4">
           Global rates applied to every session in real-time. Changes take effect immediately for all new transactions.
         </p>
@@ -102,11 +124,12 @@ export function PlatformFeesPage() {
           <>
             <div className="row g-3 align-items-end">
               <div className="col-12 col-sm-4">
-                <label className="form-label fw-semibold">Platform Fee (%)</label>
-                <div className="input-group">
+                <label htmlFor="fee-percent" className="form-label fw-semibold">Platform Fee (%)</label>
+                <div className="input-group has-validation">
                   <input
+                    id="fee-percent"
                     type="number"
-                    className="form-control"
+                    className={`form-control ${feeError ? "is-invalid" : ""}`}
                     min="0"
                     max="100"
                     step="0.1"
@@ -114,16 +137,18 @@ export function PlatformFeesPage() {
                     onChange={(e) => setPlatformFee(e.target.value)}
                   />
                   <span className="input-group-text">%</span>
+                  {feeError ? <div className="invalid-feedback">{feeError}</div> : null}
                 </div>
                 <div className="form-text">Cut taken by the platform from each session</div>
               </div>
 
               <div className="col-12 col-sm-4">
-                <label className="form-label fw-semibold">GST on Platform Fee (%)</label>
-                <div className="input-group">
+                <label htmlFor="gst-percent" className="form-label fw-semibold">GST on Platform Fee (%)</label>
+                <div className="input-group has-validation">
                   <input
+                    id="gst-percent"
                     type="number"
-                    className="form-control"
+                    className={`form-control ${gstError ? "is-invalid" : ""}`}
                     min="0"
                     max="100"
                     step="0.1"
@@ -131,6 +156,7 @@ export function PlatformFeesPage() {
                     onChange={(e) => setGst(e.target.value)}
                   />
                   <span className="input-group-text">%</span>
+                  {gstError ? <div className="invalid-feedback">{gstError}</div> : null}
                 </div>
                 <div className="form-text">GST applied on top of the platform fee</div>
               </div>
@@ -138,16 +164,24 @@ export function PlatformFeesPage() {
               <div className="col-12 col-sm-4">
                 <button
                   className="btn btn-primary w-100"
-                  onClick={save}
-                  disabled={saving}
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={saving || !isDirty || Boolean(feeError || gstError)}
                 >
-                  {saving ? "Saving..." : globalRule ? "Update Rates" : "Save Rates"}
+                  {globalRule ? "Update Rates" : "Save Rates"}
                 </button>
-                {globalRule && (
-                  <div className="form-text text-center">
-                    Last saved rule ID: {globalRule.id?.slice(0, 8)}…
-                  </div>
-                )}
+                <div className="form-text text-center">
+                  {isDirty && globalRule ? (
+                    <span className="text-warning">
+                      Unsaved changes · saved: {savedFee}% fee, {savedGst}% GST
+                    </span>
+                  ) : globalRule?.updated_at || globalRule?.created_at ? (
+                    `Last saved ${new Date(globalRule.updated_at || globalRule.created_at).toLocaleString()}`
+                  ) : globalRule ? (
+                    "Rates are saved"
+                  ) : (
+                    "No rule saved yet"
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -158,7 +192,8 @@ export function PlatformFeesPage() {
       <div className="admin-card p-3 p-md-4">
         <h5 className="mb-1">Real-time Fee Calculator</h5>
         <p className="text-muted small mb-3">
-          Enter a session price to preview how the current rates break down.
+          Enter a session price to preview how the rates above break down
+          {isDirty && globalRule ? " (using your unsaved values)" : ""}.
         </p>
 
         <div className="col-12 col-sm-4 mb-4">
@@ -212,8 +247,8 @@ export function PlatformFeesPage() {
           {/* Summary stats */}
           <div className="col-12 col-md-6 d-grid gap-2">
             {[
-              { label: "Customer pays",    value: calc.learner,       pct: calc.learner ? 100 : 0,                                                    color: "#6366f1" },
-              { label: "Creator receives", value: calc.mentor,        pct: calc.learner ? (calc.mentor / calc.learner * 100).toFixed(1) : 0,         color: "var(--admin-success)" },
+              { label: "Customer pays",     value: calc.learner,       pct: calc.learner ? 100 : 0,                                                    color: "#6366f1" },
+              { label: "Creator receives",  value: calc.mentor,        pct: calc.learner ? (calc.mentor / calc.learner * 100).toFixed(1) : 0,         color: "var(--admin-success)" },
               { label: "Platform revenue", value: calc.fee,           pct: calc.learner ? (calc.fee / calc.learner * 100).toFixed(1) : 0,            color: "var(--admin-accent-2)" },
               { label: "GST collected",    value: calc.gstOnFee,      pct: calc.learner ? (calc.gstOnFee / calc.learner * 100).toFixed(1) : 0,       color: "var(--admin-muted)" },
             ].map((item) => (
@@ -231,6 +266,15 @@ export function PlatformFeesPage() {
           </div>
         </div>
       </div>
+      <ConfirmModal
+        open={confirmOpen}
+        title="Apply new platform rates?"
+        body={`Platform fee ${platformFee}% and GST ${gst}% will apply immediately to all new transactions in ${environment}.`}
+        confirmText="Apply rates"
+        variant="primary"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={save}
+      />
     </div>
   );
 }

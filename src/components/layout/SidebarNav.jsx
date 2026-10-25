@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import { NAV_GROUPS } from "../../utils/navigation.js";
 import { SearchBar } from "../common/SearchBar.jsx";
 
-export function SidebarNav({ onNavigate }) {
+export function SidebarNav({ onNavigate, collapsed = false }) {
   const [menuQuery, setMenuQuery] = useState("");
 
   const filteredGroups = useMemo(() => {
@@ -56,6 +56,8 @@ export function SidebarNav({ onNavigate }) {
                         `sidebar-link${isActive ? " sidebar-link--active" : ""}`
                       }
                       onClick={onNavigate}
+                      title={collapsed ? item.label : undefined}
+                      aria-label={collapsed ? item.label : undefined}
                     >
                       <span className="sidebar-link__icon-wrap" aria-hidden="true">
                         <span className="material-icons sidebar-link__icon">{item.icon}</span>

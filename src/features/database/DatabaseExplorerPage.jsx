@@ -2,38 +2,51 @@ import { useMemo, useState } from "react";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
+import { ALLOWED_TABLES, TABLE_SEARCH_COLUMNS } from "../../services/adminApi.js";
 
-const SUGGESTED_TABLES = [
-  "profiles",
-  "bookings",
-  "mentor_profiles",
-  "user_reports",
-  "availability_slots",
-  "mentor_wallets",
-  "wallet_transactions",
-];
+const SELECTABLE_TABLES = [...ALLOWED_TABLES].sort();
+
+/** Server-side search columns: text columns, or id columns for id-only tables. */
+function searchColumnsFor(tableName) {
+  const cfg = TABLE_SEARCH_COLUMNS[tableName];
+  if (!cfg) return null;
+  if (cfg.text.length) return cfg.text;
+  return cfg.uuid.length ? cfg.uuid : null;
+}
+
+function searchDescription(tableName) {
+  const cfg = TABLE_SEARCH_COLUMNS[tableName];
+  if (!cfg) return "Search covers the loaded page only.";
+  const parts = [];
+  if (cfg.text.length) parts.push(`Searches ${cfg.text.join(", ")} across the whole table`);
+  if (cfg.uuid.length) parts.push(`paste a full ID to match ${cfg.uuid.join(", ")}`);
+  return `${parts.join(" · ")}.`;
+}
 
 export function DatabaseExplorerPage() {
+  const [query, setQuery] = useState("");
   const [tableName, setTableName] = useState("profiles");
 
   const visibleTables = useMemo(() => {
-    const q = tableName.trim().toLowerCase();
-    if (!q) return SUGGESTED_TABLES;
-    return SUGGESTED_TABLES.filter((t) => t.toLowerCase().includes(q));
-  }, [tableName]);
+    const q = query.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!q) return SELECTABLE_TABLES;
+    return SELECTABLE_TABLES.filter((t) => t.toLowerCase().includes(q));
+  }, [query]);
+
+  const isAllowed = ALLOWED_TABLES.has(tableName);
 
   return (
     <div className="d-grid gap-3">
       <div className="admin-card p-3 p-md-4">
-        <h4 className="mb-2">Database Explorer</h4>
         <p className="text-muted small mb-3">
-          Full table-level access. Type a table name or pick a shortcut below.
+          Only tables on the allow-list below can be opened here — this is enforced,
+          not just a suggestion.
         </p>
         <SearchBar
-          value={tableName}
-          onChange={(e) => setTableName(e.target.value)}
-          placeholder="Search or enter table name…"
-          aria-label="Table name"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter tables…"
+          aria-label="Filter tables"
         />
         <HScroll className="mt-3">
           {visibleTables.map((table) => (
@@ -42,22 +55,32 @@ export function DatabaseExplorerPage() {
               type="button"
               className={`btn btn-sm ${tableName === table ? "btn-primary" : "btn-outline-secondary"}`}
               onClick={() => setTableName(table)}
+              aria-pressed={tableName === table}
             >
               {table}
             </button>
           ))}
           {!visibleTables.length ? (
-            <span className="text-muted small align-self-center">No suggested tables match.</span>
+            <span className="text-muted small align-self-center">No allowed tables match.</span>
           ) : null}
         </HScroll>
       </div>
 
-      <ResourceCrudPage
-        title={`Table: ${tableName}`}
-        tableName={tableName}
-        description="Direct CRUD access to selected Supabase table."
-        rawColumnLabels
-      />
+      {isAllowed ? (
+        <ResourceCrudPage
+          // Remount per table so search text, page and sort never leak between tables.
+          key={tableName}
+          title={`Table: ${tableName}`}
+          tableName={tableName}
+          description={`Direct CRUD access to the selected table. ${searchDescription(tableName)}`}
+          searchColumns={searchColumnsFor(tableName)}
+          rawColumnLabels
+        />
+      ) : (
+        <div className="alert alert-danger mb-0">
+          "{tableName}" is not on the allow-list and cannot be opened here.
+        </div>
+      )}
     </div>
   );
 }

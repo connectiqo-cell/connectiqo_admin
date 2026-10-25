@@ -4,7 +4,8 @@ import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 export function BookingsPage() {
   return (
     <ResourceCrudPage
-      title="Bookings Management"
+      title="Bookings"
+      hideTitle
       tableName="bookings"
       description="Manage creator bookings, statuses, and links."
       fetchRows={(config, _tableName, options) => listBookingRows(config, options)}

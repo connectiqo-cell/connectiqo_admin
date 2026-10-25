@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import gsap from "gsap";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import {
   createTableRow,
   deleteTableRow,
@@ -8,9 +7,11 @@ import {
 } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
+import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
+import { useModalAnimation } from "../../hooks/useModalAnimation.js";
 
 // ─── Slug helper ────────────────────────────────────────────────────────────
 const toSlug = (name) =>
@@ -179,9 +180,9 @@ const EMPTY_FORM = { name: "", slug: "", icon: "category", sort_order: 0, is_act
 function CategoryModal({ open, title, initialValue, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [slugManual, setSlugManual] = useState(false);
-  const [isRendered, setIsRendered] = useState(open);
-  const backdropRef = useRef(null);
-  const dialogRef   = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open, saving ? null : onClose);
 
   useEffect(() => {
     if (initialValue) {
@@ -191,22 +192,8 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
       setForm(EMPTY_FORM);
       setSlugManual(false);
     }
+    setTouched(false);
   }, [initialValue, open]);
-
-  useEffect(() => { if (open) setIsRendered(true); }, [open]);
-
-  useEffect(() => {
-    if (!isRendered) return;
-    const b = backdropRef.current, d = dialogRef.current;
-    if (!b || !d) return;
-    if (open) {
-      gsap.fromTo(b, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: "power2.out" });
-      gsap.fromTo(d, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.32, ease: "power3.out" });
-    } else {
-      gsap.to(d, { opacity: 0, y: 16, scale: 0.975, duration: 0.22, ease: "power2.in" });
-      gsap.to(b, { opacity: 0, duration: 0.2, ease: "power2.in", onComplete: () => setIsRendered(false) });
-    }
-  }, [open, isRendered]);
 
   if (!isRendered) return null;
 
@@ -222,41 +209,64 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
     set("slug", val);
   };
 
+  const nameError = !form.name.trim() ? "Name is required." : "";
+  const slugError = !form.slug.trim() ? "Slug is required." : "";
+  const isValid = !nameError && !slugError;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setTouched(true);
+    if (!isValid || saving) return;
+    setSaving(true);
+    try {
+      await onSave({ ...form, name: form.name.trim(), slug: form.slug.trim() });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="modal modal-futuristic d-block" tabIndex="-1" role="dialog" ref={backdropRef}>
+    <div className="modal modal-futuristic d-block" tabIndex="-1" role="dialog" aria-modal="true" aria-labelledby="category-modal-title" ref={backdropRef}>
       <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document" ref={dialogRef}>
-        <div className="modal-content">
+        <form className="modal-content" onSubmit={handleSubmit} noValidate>
           <div className="modal-header">
-            <h5 className="modal-title">{title}</h5>
-            <button type="button" className="btn-close" onClick={onClose} />
+            <h5 className="modal-title" id="category-modal-title">{title}</h5>
+            <button type="button" className="btn-close" onClick={onClose} disabled={saving} aria-label="Close" />
           </div>
 
-          <div className="modal-body d-grid gap-3">
+          <fieldset className="modal-body d-grid gap-3" disabled={saving}>
             {/* Name */}
             <div>
-              <label className="form-label fw-semibold small" style={{ color: "var(--admin-muted)" }}>Name</label>
+              <label htmlFor="cat-name" className="form-label fw-semibold small" style={{ color: "var(--admin-muted)" }}>Name</label>
               <input
+                id="cat-name"
                 type="text"
-                className="form-control"
+                className={`form-control ${touched && nameError ? "is-invalid" : ""}`}
                 value={form.name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="e.g. Software Development"
+                autoFocus
+                required
               />
+              {touched && nameError ? <div className="invalid-feedback">{nameError}</div> : null}
             </div>
 
             {/* Slug — auto-filled */}
             <div>
-              <label className="form-label fw-semibold small" style={{ color: "var(--admin-muted)" }}>
+              <label htmlFor="cat-slug" className="form-label fw-semibold small" style={{ color: "var(--admin-muted)" }}>
                 Slug
                 <span className="fw-normal ms-2" style={{ fontSize: "0.72rem" }}>(auto-filled from name)</span>
               </label>
               <input
+                id="cat-slug"
                 type="text"
-                className="form-control font-monospace"
+                className={`form-control font-monospace ${touched && slugError ? "is-invalid" : ""}`}
                 value={form.slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
                 placeholder="e.g. software-development"
+                required
               />
+              {touched && slugError ? <div className="invalid-feedback">{slugError}</div> : null}
             </div>
 
             {/* Icon picker */}
@@ -290,13 +300,15 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
                 </div>
               </div>
             </div>
-          </div>
+          </fieldset>
 
           <div className="modal-footer">
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => onSave(form)}>Save</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? <><span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />Saving…</> : "Save"}
+            </button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -304,8 +316,9 @@ function CategoryModal({ open, title, initialValue, onClose, onSave }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function CategoriesPage() {
-  const { config } = useEnvironment();
+  const { config, environment } = useEnvironment();
   const { addToast } = useToast();
+  const { addLog } = useAudit();
 
   const [rows, setRows]         = useState([]);
   const [count, setCount]       = useState(0);
@@ -314,6 +327,7 @@ export function CategoriesPage() {
   const [editRow, setEditRow]   = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteRow, setDeleteRow]   = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -326,7 +340,7 @@ export function CategoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [config]);
+  }, [config, addToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -339,13 +353,15 @@ export function CategoriesPage() {
 
   const handleSave = async (form) => {
     try {
-      const { id, created_at, ...payload } = form;
+      const { id: _id, created_at: _createdAt, ...payload } = form;
       if (editRow?.id) {
-        await updateTableRow(config, "mentor_categories", editRow.id, payload);
+        const updated = await updateTableRow(config, "mentor_categories", editRow.id, payload);
+        addLog({ action: "UPDATE", entity: "mentor_categories", environment, payload: updated });
         addToast(`"${payload.name}" updated`);
         setEditRow(null);
       } else {
-        await createTableRow(config, "mentor_categories", payload);
+        const created = await createTableRow(config, "mentor_categories", payload);
+        addLog({ action: "CREATE", entity: "mentor_categories", environment, payload: created });
         addToast(`"${payload.name}" created`);
         setCreateOpen(false);
       }
@@ -358,6 +374,7 @@ export function CategoriesPage() {
   const handleDelete = async () => {
     try {
       await deleteTableRow(config, "mentor_categories", deleteRow.id);
+      addLog({ action: "DELETE", entity: "mentor_categories", environment, payload: deleteRow });
       addToast(`"${deleteRow.name}" deleted`);
       setDeleteRow(null);
       await load();
@@ -367,12 +384,17 @@ export function CategoriesPage() {
   };
 
   const toggleActive = async (row) => {
+    if (togglingId) return;
+    setTogglingId(row.id);
     try {
-      await updateTableRow(config, "mentor_categories", row.id, { is_active: !row.is_active });
+      const updated = await updateTableRow(config, "mentor_categories", row.id, { is_active: !row.is_active });
+      addLog({ action: "UPDATE", entity: "mentor_categories", environment, payload: updated });
       addToast(`"${row.name}" ${!row.is_active ? "activated" : "deactivated"}`);
       await load();
     } catch (err) {
       addToast(err.message || "Toggle failed", "error");
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -381,7 +403,6 @@ export function CategoriesPage() {
       {/* Header */}
       <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div>
-          <h4 className="mb-1">Creator Categories</h4>
           <div className="text-muted small">Manage categories shown to creators. Lower sort order = appears first.</div>
           <small className="text-muted">{count} total categories</small>
         </div>
@@ -397,7 +418,6 @@ export function CategoriesPage() {
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search categories by name, slug, or icon…"
         hint={searchHint}
-        disabled={loading}
       />
 
       {/* Table */}
@@ -443,6 +463,7 @@ export function CategoriesPage() {
                       <button
                         className={`btn btn-outline-${row.is_active ? "warning" : "success"}`}
                         onClick={() => toggleActive(row)}
+                        disabled={togglingId === row.id}
                       >
                         {row.is_active ? "Deactivate" : "Activate"}
                       </button>

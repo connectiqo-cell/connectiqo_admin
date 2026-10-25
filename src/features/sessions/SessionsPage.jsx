@@ -107,7 +107,6 @@ export function SessionsPage() {
     <div className="admin-card p-3 p-md-4">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
-          <h4 className="mb-1">Sessions</h4>
           <div className="text-muted small">
             Bookings with a meeting room from the app, plus live VideoSDK sessions when the token
             endpoint works.
@@ -147,7 +146,6 @@ export function SessionsPage() {
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search by room, creator, booked by, or status…"
         hint={searchHint}
-        disabled={loading}
       />
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
@@ -222,7 +220,12 @@ export function SessionsPage() {
       ) : (
         <DataTable
           rows={pageRows}
-          visibleColumns={["start", "end", "roomId"]}
+          visibleColumns={[
+            { key: "start", label: "Started", kind: "datetime" },
+            { key: "end", label: "Ended", kind: "datetime" },
+            { key: "roomId", label: "Room" },
+            "status",
+          ]}
           onView={setViewingRow}
         />
       )}

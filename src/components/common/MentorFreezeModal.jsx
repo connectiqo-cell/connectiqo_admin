@@ -22,9 +22,11 @@ export function MentorFreezeModal({
   onConfirmFreeze,
   onConfirmUnfreeze,
 }) {
+  // "Now" is captured when the dialog opens; reading the clock during render is impure.
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
   const isActive =
     row?.mentor_frozen === true &&
-    (!row?.mentor_frozen_until || new Date(row.mentor_frozen_until).getTime() > Date.now());
+    (!row?.mentor_frozen_until || new Date(row.mentor_frozen_until).getTime() > openedAt);
 
   const [preset, setPreset] = useState("7d");
   const [customUntil, setCustomUntil] = useState(() => {
@@ -36,6 +38,7 @@ export function MentorFreezeModal({
 
   useEffect(() => {
     if (!open) return;
+    setOpenedAt(Date.now());
     setPreset("7d");
     const d = new Date();
     d.setDate(d.getDate() + 7);

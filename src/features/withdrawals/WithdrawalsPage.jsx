@@ -9,6 +9,7 @@ import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { MinWithdrawalCard } from "./MinWithdrawalCard.jsx";
 
 // Admin auth here is a hardcoded email/password check, not real Supabase auth
 // (see AuthProvider.jsx) — the service-role key is what actually authorizes
@@ -113,9 +114,10 @@ export function WithdrawalsPage() {
   const { addLog } = useAudit();
   const { addToast } = useToast();
   const { session } = useAuth();
-  const operator = session?.email || "admin";
+  const operator = session?.user?.email || "admin";
 
   const [rows, setRows] = useState([]);
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
@@ -135,6 +137,7 @@ export function WithdrawalsPage() {
     try {
       const { rows: data } = await listWithdrawalRequestRows(config, { limit: 500 });
       setRows(data || []);
+      setLoadedAt(Date.now());
     } catch (err) {
       setError(err.message || "Failed to load withdrawal requests");
     } finally {
@@ -151,7 +154,7 @@ export function WithdrawalsPage() {
   }, [activeTab, search, sortBy]);
 
   const kpis = useMemo(() => {
-    const now = Date.now();
+    const now = loadedAt;
     const pending = rows.filter((r) => r.status === "pending");
     const pendingAmount = pending.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
     const completedThisWeek = rows.filter(
@@ -168,7 +171,7 @@ export function WithdrawalsPage() {
       completedAmount: completedThisWeekAmount,
       rejectedCount: rejectedThisWeek.length,
     };
-  }, [rows]);
+  }, [rows, loadedAt]);
 
   const filteredRows = useMemo(() => {
     const tab = STATUS_TABS.find((t) => t.key === activeTab) || STATUS_TABS[0];
@@ -306,6 +309,14 @@ export function WithdrawalsPage() {
           accent="bg-info-subtle text-info-emphasis"
         />
       </div>
+
+      <MinWithdrawalCard
+        config={config}
+        environment={environment}
+        operator={operator}
+        addLog={addLog}
+        addToast={addToast}
+      />
 
       <div className="admin-card p-3 p-md-4">
         <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">

@@ -23,7 +23,117 @@ const TABLE_ORDER_CONFIG = {
   mentor_profiles: { column: null, ascending: false },
 };
 
+/**
+ * Tables the admin UI is permitted to read/write via the generic CRUD helpers below.
+ * Deliberately excludes `admins` and any other sensitive/system table — this is the
+ * actual enforcement point (not just DatabaseExplorerPage's suggestion list), since
+ * generic CRUD ultimately relies on Supabase RLS, which this app doesn't control.
+ */
+export const ALLOWED_TABLES = new Set([
+  "profiles",
+  "bookings",
+  "mentor_profiles",
+  "mentor_categories",
+  "platform_fee_rules",
+  "hero_slides",
+  "transactions",
+  "earnings",
+  "mentor_wallets",
+  "withdrawal_requests",
+  "availability_slots",
+  "user_reports",
+  // app_categories / wallet_transactions were listed here but don't exist in the
+  // database; add them back once those tables are created.
+]);
+
+/**
+ * Searchable columns per table, taken from the real Postgres schema.
+ * `text`: text columns matched with case-insensitive "contains" (ilike).
+ * `uuid`: uuid columns matched exactly when the search box holds a full UUID.
+ * Only these may be used: ilike on uuid/date/numeric columns makes Postgres error.
+ * Secrets/tokens (razorpay_signature, fcm_token, bank_account) are deliberately left out.
+ */
+export const TABLE_SEARCH_COLUMNS = {
+  profiles: {
+    text: ["name", "email", "username", "role"],
+    uuid: ["id"],
+  },
+  bookings: {
+    text: ["status", "message", "meeting_id", "reschedule_reason"],
+    uuid: ["id", "learner_id", "mentor_id", "slot_id", "original_booking_id"],
+  },
+  mentor_profiles: {
+    text: ["specialization", "category", "bio", "location", "kyc_status", "upi_id", "account_holder_name", "razorpay_account_status"],
+    uuid: ["id"],
+  },
+  mentor_categories: {
+    text: ["name", "slug", "icon"],
+    uuid: ["id"],
+  },
+  platform_fee_rules: {
+    text: ["notes"],
+    uuid: ["id"],
+  },
+  hero_slides: {
+    text: ["image_url", "storage_path"],
+    uuid: ["id"],
+  },
+  transactions: {
+    text: ["status", "admin_note", "razorpay_order_id", "razorpay_payment_id", "currency", "booking_message"],
+    uuid: ["id", "booking_id", "learner_id", "mentor_id", "slot_id"],
+  },
+  earnings: {
+    text: ["status", "source", "notes", "route_transfer_id"],
+    uuid: ["id", "mentor_id", "booking_id"],
+  },
+  mentor_wallets: {
+    text: [],
+    uuid: ["id"],
+  },
+  withdrawal_requests: {
+    text: ["status", "admin_note", "upi_id", "payout_method", "payout_reference", "razorpay_payout_id", "processed_by", "rejected_reason"],
+    uuid: ["id", "mentor_id"],
+  },
+  availability_slots: {
+    text: [],
+    uuid: ["id", "mentor_id"],
+  },
+  user_reports: {
+    text: ["reason", "details", "context_type", "status"],
+    uuid: ["id", "reporter_id", "reported_user_id", "context_id"],
+  },
+};
+
+/**
+ * Columns holding a profiles.id (from the database's foreign keys), with the label to show.
+ * Tables list these people by name instead of by UUID.
+ */
+export const PERSON_COLUMNS = {
+  bookings: { learner_id: "Booked by", mentor_id: "Creator" },
+  transactions: { learner_id: "Booked by", mentor_id: "Creator" },
+  earnings: { mentor_id: "Creator" },
+  withdrawal_requests: { mentor_id: "Creator" },
+  availability_slots: { mentor_id: "Creator" },
+  mentor_wallets: { id: "Creator" },
+  user_reports: { reporter_id: "Reported by", reported_user_id: "Reported user" },
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True when the table can be searched server-side at all (text or id columns). */
+export function isTableSearchable(tableName) {
+  const cfg = TABLE_SEARCH_COLUMNS[tableName];
+  return Boolean(cfg && (cfg.text.length || cfg.uuid.length));
+}
+
+function assertAllowedTable(tableName) {
+  if (!ALLOWED_TABLES.has(tableName)) {
+    throw new Error(`Table "${tableName}" is not permitted for admin UI access.`);
+  }
+}
+
 export async function listTableRows(config, tableName, options = {}) {
+  assertAllowedTable(tableName);
   // backward compat: plain number treated as limit
   if (typeof options === "number") options = { limit: options };
 
@@ -34,6 +144,10 @@ export async function listTableRows(config, tableName, options = {}) {
     sortCol = null,
     sortDir = "asc",
     filters = {},
+    search = "",
+    searchColumns = [],
+    // Also return { people: { [profileId]: { id, name, email } } } for this page's person columns.
+    withPeople = false,
   } = options;
 
   const supabase = getSupabaseClient(config);
@@ -55,9 +169,47 @@ export async function listTableRows(config, tableName, options = {}) {
     if (val && val !== "all") query = query.eq(key, val);
   });
 
+  // Server-side search across the whole table (not just the current page).
+  // Only runs when the caller opts in with real text columns (searchColumns).
+  //  - A full UUID matches the table's id columns exactly (e.g. paste a booking_id).
+  //  - Otherwise each word must appear in at least one text column, in any order,
+  //    so "john gmail" finds name "John" with email "...@gmail.com".
+  const trimmedSearch = search.trim();
+  if (trimmedSearch && searchColumns.length) {
+    const uuidColumns = TABLE_SEARCH_COLUMNS[tableName]?.uuid || [];
+    if (UUID_PATTERN.test(trimmedSearch) && uuidColumns.length) {
+      query = query.or(uuidColumns.map((col) => `${col}.eq.${trimmedSearch}`).join(","));
+    } else {
+      // uuid columns can't be ilike-matched, so only text columns take part here.
+      const textColumns = searchColumns.filter((col) => !uuidColumns.includes(col));
+      if (!textColumns.length) return { rows: [], count: 0 };
+      const words = trimmedSearch
+        .split(/\s+/)
+        // Strip characters that break PostgREST's or() syntax or act as wildcards.
+        .map((word) => word.replace(/[,()"\\%*]/g, ""))
+        .filter(Boolean);
+      words.forEach((word) => {
+        query = query.or(textColumns.map((col) => `${col}.ilike.*${word}*`).join(","));
+      });
+    }
+  }
+
   const { data, error, count } = await query;
   if (error) throw error;
-  return { rows: data || [], count: count || 0 };
+  const rows = data || [];
+  const people = withPeople ? await lookupPeople(config, tableName, rows) : {};
+  return { rows, count: count || 0, people };
+}
+
+/** Names for the person columns of these rows. Never fails the caller: falls back to {}. */
+async function lookupPeople(config, tableName, rows) {
+  const columns = Object.keys(PERSON_COLUMNS[tableName] || {});
+  if (!columns.length || !rows.length) return {};
+  try {
+    return await fetchProfilesByIds(config, rows.flatMap((row) => columns.map((col) => row[col])));
+  } catch {
+    return {};
+  }
 }
 
 export async function fetchProfilesByIds(config, ids) {
@@ -75,6 +227,7 @@ export async function fetchProfilesByIds(config, ids) {
 }
 
 export async function getTableRowById(config, tableName, id) {
+  assertAllowedTable(tableName);
   if (!id) return null;
   const supabase = getSupabaseClient(config);
   const { data, error } = await supabase.from(tableName).select("*").eq("id", id).maybeSingle();
@@ -148,17 +301,15 @@ export async function getAdminProfileDetail(config, profileId) {
   };
 }
 
-/** Uploaded mentor library videos for a user. */
+/**
+ * Uploaded mentor library videos for a user. video_url/hls_url have no
+ * direct SELECT grant for authenticated — this goes through an
+ * admin-gated RPC instead (admin_list_mentor_videos), same pattern as the
+ * web portal's viewer-facing get_*_for_viewer functions.
+ */
 export async function listMentorUploadedVideos(config, mentorId) {
   const supabase = getSupabaseClient(config);
-  const { data, error } = await supabase
-    .from("mentor_videos")
-    .select(
-      "id, mentor_id, title, description, video_url, thumbnail_url, is_free, position, created_at, storage_path"
-    )
-    .eq("mentor_id", mentorId)
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.rpc("admin_list_mentor_videos", { p_mentor_id: mentorId });
   if (error) throw error;
   return data || [];
 }
@@ -254,15 +405,10 @@ export async function listAllMentorUploadedVideos(
   };
 }
 
+/** video_url/hls_url have no direct SELECT grant for authenticated — goes through admin_get_mentor_video instead. */
 export async function getMentorUploadedVideo(config, videoId) {
   const supabase = getSupabaseClient(config);
-  const { data, error } = await supabase
-    .from("mentor_videos")
-    .select(
-      "id, mentor_id, title, description, video_url, thumbnail_url, is_free, position, is_promoted, promoted_at, created_at, storage_path"
-    )
-    .eq("id", videoId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("admin_get_mentor_video", { p_video_id: videoId }).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Video not found");
   return data;
@@ -446,7 +592,7 @@ export async function listMentorProfileRows(config, options = {}) {
   if (typeof options === "number") options = { limit: options };
 
   const sortFromProfile = MENTOR_PROFILE_SORT_FROM_PROFILES.includes(options.sortCol);
-  const { rows, count } = await listTableRows(
+  const { rows, count, people } = await listTableRows(
     config,
     "mentor_profiles",
     sortFromProfile ? { ...options, sortCol: null } : options
@@ -457,7 +603,7 @@ export async function listMentorProfileRows(config, options = {}) {
     enriched = sortRowsClientSide(enriched, options.sortCol, options.sortDir);
   }
 
-  return { rows: enriched, count };
+  return { rows: enriched, count, people };
 }
 
 /** Booking rows with mentor/learner names from profiles (mentor_id, learner_id → profiles.id). */
@@ -465,7 +611,7 @@ export async function listBookingRows(config, options = {}) {
   if (typeof options === "number") options = { limit: options };
 
   const sortFromProfile = BOOKING_SORT_FROM_PROFILES.includes(options.sortCol);
-  const { rows, count } = await listTableRows(
+  const { rows, count, people } = await listTableRows(
     config,
     "bookings",
     sortFromProfile ? { ...options, sortCol: null } : options
@@ -488,7 +634,7 @@ export async function listBookingRows(config, options = {}) {
     enriched = sortRowsClientSide(enriched, options.sortCol, options.sortDir);
   }
 
-  return { rows: enriched, count };
+  return { rows: enriched, count, people };
 }
 
 export async function callAdminRpc(config, fnName, args = {}) {
@@ -599,6 +745,7 @@ export async function saveAppConfig(config, entries) {
 }
 
 export async function createTableRow(config, tableName, payload) {
+  assertAllowedTable(tableName);
   const supabase = getSupabaseClient(config);
   const { data, error } = await supabase.from(tableName).insert(payload).select();
   if (error) throw error;
@@ -606,6 +753,7 @@ export async function createTableRow(config, tableName, payload) {
 }
 
 export async function updateTableRow(config, tableName, id, payload) {
+  assertAllowedTable(tableName);
   const supabase = getSupabaseClient(config);
   const { data, error } = await supabase
     .from(tableName)
@@ -617,6 +765,7 @@ export async function updateTableRow(config, tableName, id, payload) {
 }
 
 export async function deleteTableRow(config, tableName, id) {
+  assertAllowedTable(tableName);
   const supabase = getSupabaseClient(config);
   const { error } = await supabase.from(tableName).delete().eq("id", id);
   if (error) throw error;
@@ -629,7 +778,7 @@ const MARKETING_BUCKET = "marketing-clips";
  */
 export async function uploadMarketingClipFile(config, file) {
   const supabase = getSupabaseClient(config);
-  const safeName = String(file?.name || "clip.mp4").replace(/[^\w.\-]+/g, "_");
+  const safeName = String(file?.name || "clip.mp4").replace(/[^\w.-]+/g, "_");
   const path = `uploads/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage.from(MARKETING_BUCKET).upload(path, file, {
     cacheControl: "3600",
@@ -657,7 +806,7 @@ const HERO_SLIDES_BUCKET = "hero_slides";
 
 export async function uploadHeroSlide(config, file) {
   const supabase = getSupabaseClient(config);
-  const safeName = String(file?.name || "slide.jpg").replace(/[^\w.\-]+/g, "_");
+  const safeName = String(file?.name || "slide.jpg").replace(/[^\w.-]+/g, "_");
   const path = `${Date.now()}-${safeName}`;
 
   const { error: uploadError } = await supabase.storage
@@ -677,6 +826,202 @@ export async function deleteHeroSlideStorage(config, storagePath) {
   const supabase = getSupabaseClient(config);
   const { error } = await supabase.storage.from(HERO_SLIDES_BUCKET).remove([storagePath]);
   if (error) throw error;
+}
+
+const FETCH_BATCH = 1000;
+
+/** Every row of a table (selected columns only), fetched in batches — no silent 1,000-row cap. */
+export async function listAllRows(config, tableName, columns = "*") {
+  assertAllowedTable(tableName);
+  const supabase = getSupabaseClient(config);
+  const rows = [];
+  for (let from = 0; ; from += FETCH_BATCH) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select(columns)
+      .order("id", { ascending: true }) // stable order so batches never overlap or skip
+      .range(from, from + FETCH_BATCH - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < FETCH_BATCH) return rows;
+  }
+}
+
+/** How each transaction status counts toward money totals. */
+export const TX_STATUS_GROUPS = {
+  collected: ["paid", "completed", "captured", "success"],
+  unpaid: ["created", "pending", "initiated"],
+  failed: ["failed"],
+  refunded: ["refunded"],
+};
+
+function txGroup(status) {
+  const s = String(status || "").toLowerCase();
+  return Object.keys(TX_STATUS_GROUPS).find((group) => TX_STATUS_GROUPS[group].includes(s)) || "other";
+}
+
+// Money is summed in whole paise (exact integers) and converted once at the end;
+// adding rupee floats directly drifts (e.g. 2,500 × ₹0.10 → ₹249.99999999999).
+const asPaise = (paise) => Math.round(Number(paise) || 0);
+const rupeesAsPaise = (rupees) => Math.round((Number(rupees) || 0) * 100);
+const toRupees = (paise) => paise / 100;
+
+/**
+ * Payment figures for the Payments overview, computed over all rows.
+ * Only `collected` transactions count as money received; unpaid checkouts are reported separately.
+ */
+export async function getPaymentSummary(config) {
+  const [transactions, earnings, wallets, withdrawals] = await Promise.all([
+    listAllRows(config, "transactions", "id, status, amount_total_paise, mentor_earning_paise, platform_fee_paise"),
+    listAllRows(config, "earnings", "id, status, amount"),
+    listAllRows(config, "mentor_wallets", "id, balance, total_earned, total_withdrawn"),
+    listAllRows(config, "withdrawal_requests", "id, status, amount"),
+  ]);
+
+  const tx = { collected: null, unpaid: null, failed: null, refunded: null, other: null };
+  Object.keys(tx).forEach((k) => { tx[k] = { count: 0, total: 0, mentor: 0, platform: 0 }; });
+  const byStatus = {};
+
+  transactions.forEach((row) => {
+    const total = asPaise(row.amount_total_paise);
+    const bucket = tx[txGroup(row.status)];
+    bucket.count += 1;
+    bucket.total += total;
+    bucket.mentor += asPaise(row.mentor_earning_paise);
+    bucket.platform += asPaise(row.platform_fee_paise);
+
+    const status = String(row.status || "unknown").toLowerCase();
+    byStatus[status] ??= { status, group: txGroup(status), count: 0, total: 0 };
+    byStatus[status].count += 1;
+    byStatus[status].total += total;
+  });
+
+  // Convert the paise accumulators to rupees for display.
+  Object.values(tx).forEach((bucket) => {
+    bucket.total = toRupees(bucket.total);
+    bucket.mentor = toRupees(bucket.mentor);
+    bucket.platform = toRupees(bucket.platform);
+  });
+  Object.values(byStatus).forEach((entry) => {
+    entry.total = toRupees(entry.total);
+  });
+
+  const sumRupees = (rows, field) => toRupees(rows.reduce((sum, row) => sum + rupeesAsPaise(row[field]), 0));
+  const sumBy = (rows, predicate) => {
+    const matching = rows.filter(predicate);
+    return { count: matching.length, total: sumRupees(matching, "amount") };
+  };
+  const isStatus = (...statuses) => (row) => statuses.includes(String(row.status || "").toLowerCase());
+
+  return {
+    transactions: {
+      ...tx,
+      count: transactions.length,
+      byStatus: Object.values(byStatus).sort((a, b) => b.total - a.total),
+    },
+    earnings: {
+      count: earnings.length,
+      completed: sumBy(earnings, isStatus("completed", "paid")),
+      pending: sumBy(earnings, isStatus("pending", "unpaid")),
+    },
+    wallets: {
+      count: wallets.length,
+      balance: sumRupees(wallets, "balance"),
+      earned: sumRupees(wallets, "total_earned"),
+      withdrawn: sumRupees(wallets, "total_withdrawn"),
+    },
+    withdrawals: {
+      count: withdrawals.length,
+      pending: sumBy(withdrawals, isStatus("pending")),
+      approved: sumBy(withdrawals, isStatus("approved", "paid", "processed")),
+    },
+  };
+}
+
+/** Largest minimum an admin may set (₹10,00,000) — guards against a stray extra zero. */
+export const MAX_MIN_WITHDRAWAL = 1000000;
+
+/**
+ * Payout settings (single row, id = true). Returns null when the payout_settings
+ * table doesn't exist yet (migration 20261024000000 not applied).
+ * The minimum is enforced server-side by deduct_wallet_for_withdrawal.
+ */
+export async function getPayoutSettings(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("payout_settings")
+    .select("min_withdrawal_amount, updated_at, updated_by")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) {
+    // 42P01 = undefined table (Postgres); PGRST205 = table not in PostgREST schema cache.
+    if (error.code === "42P01" || error.code === "PGRST205") return null;
+    throw error;
+  }
+  return data ? { ...data, min_withdrawal_amount: Number(data.min_withdrawal_amount) } : null;
+}
+
+/** Set the minimum withdrawal (whole rupees). Admin-only via RLS (is_admin()). */
+export async function updateMinWithdrawal(config, amount, operator) {
+  const value = Number(amount);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_MIN_WITHDRAWAL) {
+    throw new Error(`Minimum must be a whole number of rupees between ₹1 and ₹${MAX_MIN_WITHDRAWAL.toLocaleString("en-IN")}`);
+  }
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("payout_settings")
+    .update({ min_withdrawal_amount: value, updated_at: new Date().toISOString(), updated_by: operator || null })
+    .eq("id", true)
+    .select("min_withdrawal_amount, updated_at, updated_by")
+    .maybeSingle();
+  if (error) throw error;
+  // RLS silently matches zero rows for non-admins instead of erroring.
+  if (!data) throw new Error("Not saved — your account isn't allowed to change payout settings.");
+  return { ...data, min_withdrawal_amount: Number(data.min_withdrawal_amount) };
+}
+
+/**
+ * Email tracking for every creator (columns added to mentor_profiles by migration
+ * 20261025000000), with name/email and account state (login freeze, creator freeze,
+ * deleted). Emails follow the account state. Newest email activity first.
+ */
+export async function listCreatorEmailTracking(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("mentor_profiles")
+    .select(
+      "id, greeting_mail_sent, greeting_mail_sent_at, profile_completeness, open_slots_mail_count, last_open_slots_mail_at, " +
+        "mentor_frozen, mentor_frozen_until, mentor_freeze_reason"
+    );
+  if (error) throw error;
+
+  const rows = data || [];
+  const ids = rows.map((row) => row.id);
+  const { data: profiles, error: profileError } = ids.length
+    ? await supabase.from("profiles").select("id, name, email, is_frozen, deleted_at").in("id", ids)
+    : { data: [], error: null };
+  if (profileError) throw profileError;
+  const profileById = Object.fromEntries((profiles || []).map((profile) => [profile.id, profile]));
+
+  const lastActivity = (row) => Math.max(
+    Date.parse(row.greeting_mail_sent_at || 0) || 0,
+    Date.parse(row.last_open_slots_mail_at || 0) || 0
+  );
+
+  return rows
+    .map((row) => {
+      const profile = profileById[row.id];
+      return {
+        ...row,
+        name: profile?.name ?? null,
+        email: profile?.email ?? null,
+        is_frozen: Boolean(profile?.is_frozen),
+        deleted_at: profile?.deleted_at ?? null,
+        // No profile row means the account no longer exists.
+        profile_missing: !profile,
+      };
+    })
+    .sort((a, b) => lastActivity(b) - lastActivity(a) || String(a.name || "").localeCompare(String(b.name || "")));
 }
 
 export async function listDashboardStats(config) {

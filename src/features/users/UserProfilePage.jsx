@@ -184,7 +184,7 @@ export function UserProfilePage() {
   const confirmBanLogin = async () => {
     if (!banRow?.id) return;
     try {
-      const next = !Boolean(banRow.is_frozen);
+      const next = !banRow.is_frozen;
       const updated = await updateTableRow(config, "profiles", banRow.id, { is_frozen: next });
       addLog({
         action: "UPDATE",

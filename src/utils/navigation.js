@@ -45,6 +45,7 @@ export const NAV_GROUPS = [
     label: "System",
     items: [
       { to: "/app-update", label: "Force update", icon: "system_update" },
+      { to: "/email-triggers", label: "Email triggers", icon: "forward_to_inbox" },
       { to: "/database", label: "Database explorer", icon: "storage" },
       { to: "/audit-logs", label: "Audit logs", icon: "history" },
     ],

@@ -1,5 +1,11 @@
+import { Pagination } from "./Pagination.jsx";
+
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
+/**
+ * Pagination for lists that are already fully loaded (Sessions, Recordings, Videos…).
+ * Same API as before; renders the shared numbered <Pagination> so every page looks alike.
+ */
 export function PaginationBar({
   page,
   pageSize,
@@ -8,72 +14,19 @@ export function PaginationBar({
   onPageSizeChange,
   pageSizeOptions = PAGE_SIZE_OPTIONS,
 }) {
-  const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const rangeFrom = total ? (safePage - 1) * pageSize + 1 : 0;
-  const rangeTo = Math.min(safePage * pageSize, total || 0);
-
   if (!total) return null;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
 
   return (
-    <div
-      className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3 pt-2"
-      style={{ borderTop: "1px solid var(--admin-border)" }}
-    >
-      <div className="text-muted small">
-        {rangeFrom}–{rangeTo} of {total} records
-      </div>
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-muted small">Rows:</span>
-        <select
-          className="form-select form-select-sm"
-          style={{ width: 70 }}
-          value={pageSize}
-          onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
-        >
-          {pageSizeOptions.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          disabled={safePage <= 1}
-          onClick={() => onPageChange?.(1)}
-        >
-          «
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          disabled={safePage <= 1}
-          onClick={() => onPageChange?.(safePage - 1)}
-        >
-          ‹
-        </button>
-        <span className="small px-1">
-          Page {safePage} / {totalPages}
-        </span>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          disabled={safePage >= totalPages}
-          onClick={() => onPageChange?.(safePage + 1)}
-        >
-          ›
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-secondary"
-          disabled={safePage >= totalPages}
-          onClick={() => onPageChange?.(totalPages)}
-        >
-          »
-        </button>
-      </div>
-    </div>
+    <Pagination
+      page={safePage}
+      pageSize={pageSize}
+      count={total}
+      onPageChange={(next) => onPageChange?.(next)}
+      onPageSizeChange={(size) => onPageSizeChange?.(size)}
+      pageSizeOptions={pageSizeOptions}
+    />
   );
 }
 

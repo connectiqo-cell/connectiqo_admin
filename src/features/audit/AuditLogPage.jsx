@@ -3,7 +3,7 @@ import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
 
-const AUDIT_COLUMNS = ["timestamp", "environment", "action", "entity", "payload"];
+const AUDIT_COLUMNS = ["timestamp", "environment", "action", "entity", "actorEmail", "payload"];
 
 export function AuditLogPage() {
   const { logs } = useAudit();
@@ -18,7 +18,6 @@ export function AuditLogPage() {
 
   return (
     <div className="admin-card p-3 p-md-4">
-      <h4 className="mb-1">Audit Logs</h4>
       <p className="text-muted small mb-3">All destructive and mutation actions are tracked here.</p>
 
       <SearchBar
@@ -37,6 +36,7 @@ export function AuditLogPage() {
               <th>Environment</th>
               <th>Action</th>
               <th>Entity</th>
+              <th>Actor</th>
               <th>Payload</th>
             </tr>
           </thead>
@@ -49,6 +49,7 @@ export function AuditLogPage() {
                   <span className="badge text-bg-secondary">{log.action}</span>
                 </td>
                 <td>{log.entity}</td>
+                <td>{log.actorEmail || "—"}</td>
                 <td>
                   <pre className="json-pre mb-0">{JSON.stringify(log.payload, null, 2)}</pre>
                 </td>

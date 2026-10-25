@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createTableRow,
   deleteTableRow,
@@ -6,6 +6,7 @@ import {
   getAdminProfileDetail,
   getTableRowById,
   listTableRows,
+  PERSON_COLUMNS,
   unfreezeMentor,
   updateTableRow,
 } from "../../services/adminApi.js";
@@ -20,6 +21,7 @@ import { MentorFreezeModal } from "../../components/common/MentorFreezeModal.jsx
 import { ProfileDetailsModal } from "../../components/common/ProfileDetailsModal.jsx";
 import { RowDetailsModal } from "../../components/common/RowDetailsModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
+import { Pagination } from "../../components/common/Pagination.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
 
 const EXCLUDE_FROM_CREATE = ["id", "created_at", "updated_at"];
@@ -30,17 +32,28 @@ export function ResourceCrudPage({
   tableName,
   description,
   compactColumns = null,
+  /** { column: "Header" } overrides for the table. */
   columnLabels = null,
   detailFields = null,
   renderExtraActions = null,
+  /** Full login ban (profiles.is_frozen). */
   enableProfileFreeze = false,
-  /** Mentor-side timed freeze (hides profile/videos, keeps learner access). */
+  /** Creator-side timed freeze (hides profile/videos, keeps customer access). */
   enableMentorFreeze = false,
   rowLimit = null,
   /** e.g. [{ key: "status", label: "Status", options: ["all","pending","completed","failed"] }] */
   filterFields = null,
   /** Override default listTableRows (e.g. mentor profiles with profile names). */
   fetchRows = null,
+  /**
+   * Real, text-typed column names to search server-side (across the whole table,
+   * not just the loaded page). Omit when the searchable fields aren't real columns
+   * on this table (e.g. enriched/joined display names) — search then falls back to
+   * filtering only the currently-loaded page, and is labeled as such.
+   */
+  searchColumns = null,
+  /** Hide the card heading when it would just repeat the top bar's page title. */
+  hideTitle = false,
   /** Hide Create/Edit/Delete — use when a dedicated control panel owns mutations. */
   readOnly = false,
   /** When set, fetch and open this row's details (e.g. deep-link from reports). */
@@ -51,17 +64,19 @@ export function ResourceCrudPage({
   enableRichProfileView = false,
   /** Override View button (e.g. navigate to /users/:id). */
   onViewRow = null,
-  /** Show plain humanized column names (Database Explorer). */
+  /** Show real column names (Database Explorer). */
   rawColumnLabels = false,
 }) {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
   const { addToast } = useToast();
   const { session } = useAuth();
-  const operator = session?.user?.email || session?.email || "admin";
+  const operator = session?.user?.email || "admin";
+  const cardRef = useRef(null);
 
   const [rows, setRows]             = useState([]);
   const [count, setCount]           = useState(0);
+  const [people, setPeople]         = useState({});
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
 
@@ -76,8 +91,20 @@ export function ResourceCrudPage({
   // Filters (server-side)
   const [activeFilters, setActiveFilters] = useState({});
 
-  // Search (client-side on current page)
+  // Search — server-side (whole table) when searchColumns is supplied, else
+  // client-side (current page only, clearly labeled as such).
+  const isServerSearch = Array.isArray(searchColumns) && searchColumns.length > 0;
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (isServerSearch) setPage(1);
+  }, [debouncedSearch, isServerSearch]);
 
   // Modals
   const [editingRow, setEditingRow]   = useState(null);
@@ -97,7 +124,10 @@ export function ResourceCrudPage({
     setSortDir("asc");
     setActiveFilters({});
     setSearchQuery("");
+    setDebouncedSearch("");
   }, [tableName]);
+
+  const searchDep = isServerSearch ? debouncedSearch : null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,15 +139,18 @@ export function ResourceCrudPage({
         sortCol,
         sortDir,
         filters: activeFilters,
+        withPeople: true,
+        ...(isServerSearch ? { search: searchDep, searchColumns } : {}),
       });
       setRows(result.rows);
       setCount(result.count);
+      setPeople(result.people || {});
     } catch (err) {
       setError(err.message || `Failed to load ${tableName}`);
     } finally {
       setLoading(false);
     }
-  }, [config, tableName, rowLimit, page, pageSize, sortCol, sortDir, activeFilters, fetchRows]);
+  }, [config, tableName, rowLimit, page, pageSize, sortCol, sortDir, activeFilters, fetchRows, isServerSearch, searchDep, searchColumns]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -151,7 +184,6 @@ export function ResourceCrudPage({
   // Deep-link: open a specific row's details (e.g. /users?id=…)
   useEffect(() => {
     if (!openRowId) return;
-
     let cancelled = false;
 
     const openLinkedRow = async () => {
@@ -165,12 +197,12 @@ export function ResourceCrudPage({
         if (row) {
           setViewingRow(row);
         } else {
-          addToast("Profile not found", "error");
+          addToast("Record not found", "error");
           onOpenRowHandled?.();
         }
       } catch (err) {
         if (cancelled) return;
-        addToast(err.message || "Failed to open profile", "error");
+        addToast(err.message || "Failed to open record", "error");
         onOpenRowHandled?.();
       }
     };
@@ -179,7 +211,7 @@ export function ResourceCrudPage({
     return () => {
       cancelled = true;
     };
-    // Intentionally omit toast/callback identity — only reopen when the target id changes.
+    // Only reopen when the target id changes, not when callback identities change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRowId, tableName, config, enableRichProfileView]);
 
@@ -279,10 +311,16 @@ export function ResourceCrudPage({
     }
   };
 
+  const refreshOpenProfile = async (id) => {
+    if (enableRichProfileView && (viewingRow?.id === id || profileDetail?.profile?.id === id)) {
+      await openRichProfile(id);
+    }
+  };
+
   const confirmBanLogin = async () => {
     if (!banRow?.id) return;
     try {
-      const next = !Boolean(banRow.is_frozen);
+      const next = !banRow.is_frozen;
       const updated = await updateTableRow(config, "profiles", banRow.id, { is_frozen: next });
       addLog({
         action: "UPDATE",
@@ -291,11 +329,10 @@ export function ResourceCrudPage({
         payload: { ...updated, _admin_action: next ? "ban_login" : "unban_login" },
       });
       addToast(`${banRow.name || "User"} ${next ? "banned from login" : "login restored"}`);
+      const id = banRow.id;
       setBanRow(null);
       await load();
-      if (enableRichProfileView && viewingRow?.id === banRow.id) {
-        await openRichProfile(banRow.id);
-      }
+      await refreshOpenProfile(id);
     } catch (err) {
       addToast(err.message || "Ban toggle failed", "error");
     }
@@ -305,18 +342,11 @@ export function ResourceCrudPage({
     setMentorFreezeBusy(true);
     try {
       const updated = await freezeMentor(config, row.id, { until, reason, operator });
-      addLog({
-        action: "UPDATE",
-        entity: "mentor_profiles",
-        environment,
-        payload: { ...updated, _admin_action: "mentor_freeze" },
-      });
+      addLog({ action: "UPDATE", entity: "mentor_profiles", environment, payload: { ...updated, _admin_action: "mentor_freeze" } });
       addToast(`${row.name || "Creator"} frozen`);
       setMentorFreezeRow(null);
       await load();
-      if (enableRichProfileView && (viewingRow?.id === row.id || profileDetail?.profile?.id === row.id)) {
-        await openRichProfile(row.id);
-      }
+      await refreshOpenProfile(row.id);
     } catch (err) {
       addToast(err.message || "Creator freeze failed", "error");
     } finally {
@@ -328,18 +358,11 @@ export function ResourceCrudPage({
     setMentorFreezeBusy(true);
     try {
       const updated = await unfreezeMentor(config, row.id, operator);
-      addLog({
-        action: "UPDATE",
-        entity: "mentor_profiles",
-        environment,
-        payload: { ...updated, _admin_action: "mentor_unfreeze" },
-      });
+      addLog({ action: "UPDATE", entity: "mentor_profiles", environment, payload: { ...updated, _admin_action: "mentor_unfreeze" } });
       addToast(`${row.name || "Creator"} restored`);
       setMentorFreezeRow(null);
       await load();
-      if (enableRichProfileView && (viewingRow?.id === row.id || profileDetail?.profile?.id === row.id)) {
-        await openRichProfile(row.id);
-      }
+      await refreshOpenProfile(row.id);
     } catch (err) {
       addToast(err.message || "Creator unfreeze failed", "error");
     } finally {
@@ -350,17 +373,20 @@ export function ResourceCrudPage({
   const extraForRow = (row) => {
     const nodes = [];
     if (enableMentorFreeze) {
-      const active =
+      const frozen =
         row.mentor_frozen === true &&
         (!row.mentor_frozen_until || new Date(row.mentor_frozen_until).getTime() > Date.now());
       nodes.push(
         <button
           key="mentor-freeze"
           type="button"
-          className={`btn btn-sm btn-outline-${active ? "success" : "warning"}`}
+          className={`table-action table-action--${frozen ? "success" : "warning"}`}
           onClick={() => openMentorFreeze(row)}
+          disabled={mentorFreezeBusy}
+          title={frozen ? "Unfreeze creator" : "Freeze creator (hide profile & videos)"}
+          aria-label={`${frozen ? "Unfreeze" : "Freeze"} creator ${row.name || row.email || ""}`.trim()}
         >
-          {active ? "Unfreeze creator" : "Freeze creator"}
+          <span className="material-icons" aria-hidden="true">{frozen ? "lock_open" : "ac_unit"}</span>
         </button>
       );
     }
@@ -369,15 +395,17 @@ export function ResourceCrudPage({
         <button
           key="ban-login"
           type="button"
-          className={`btn btn-sm btn-outline-${row.is_frozen ? "success" : "danger"}`}
+          className={`table-action table-action--${row.is_frozen ? "success" : "danger"}`}
           onClick={() => setBanRow(row)}
+          title={row.is_frozen ? "Restore login" : "Ban login (full account)"}
+          aria-label={`${row.is_frozen ? "Restore login for" : "Ban login for"} ${row.name || row.email || "account"}`}
         >
-          {row.is_frozen ? "Unban login" : "Ban login"}
+          <span className="material-icons" aria-hidden="true">{row.is_frozen ? "how_to_reg" : "block"}</span>
         </button>
       );
     }
     if (typeof renderExtraActions === "function") {
-      const custom = renderExtraActions(row, load);
+      const custom = renderExtraActions(row, load, people);
       if (custom) nodes.push(<span key="custom">{custom}</span>);
     }
     if (!nodes.length) return null;
@@ -390,33 +418,51 @@ export function ResourceCrudPage({
     typeof renderExtraActions === "function";
 
   const filteredRows = useMemo(
-    () => filterRowsBySearch(rows, searchQuery, compactColumns),
-    [rows, searchQuery, compactColumns]
+    () => (isServerSearch ? rows : filterRowsBySearch(rows, searchQuery, compactColumns)),
+    [rows, searchQuery, compactColumns, isServerSearch]
   );
 
-  const searchHint = getSearchResultHint(filteredRows.length, rows.length, searchQuery);
+  const searchHint = isServerSearch
+    ? (searchQuery.trim() ? `${count} matching record${count === 1 ? "" : "s"} found across all pages` : null)
+    : getSearchResultHint(filteredRows.length, rows.length, searchQuery, count);
 
-  // Pagination calc
-  const totalPages = rowLimit != null ? 1 : Math.max(1, Math.ceil(count / pageSize));
-  const rangeFrom  = rowLimit != null ? 1 : (page - 1) * pageSize + 1;
-  const rangeTo    = rowLimit != null ? count : Math.min(page * pageSize, count);
+  // Client-side search only sees what was loaded; say so when that isn't everything.
+  const isPartialLoad = count > rows.length;
+
+  const isPaginated = rowLimit == null;
+  const totalPages  = isPaginated ? Math.max(1, Math.ceil(count / pageSize)) : 1;
+
+  // e.g. deleting the last row on the last page: step back instead of showing an empty page.
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
+
+  const goToPage = (next) => {
+    setPage(next);
+    // Bring the top of the list back into view when paging from the bottom controls.
+    const top = cardRef.current?.getBoundingClientRect().top;
+    if (top != null && top < 0) cardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
-    <div className="resource-page admin-card p-3 p-md-4">
-      <div className="resource-page__header">
-        <div className="resource-page__intro">
-          <h4 className="resource-page__title">{title}</h4>
-          {description ? <p className="resource-page__desc">{description}</p> : null}
-          {count > 0 ? (
-            <p className="resource-page__meta">
+    <div className="admin-card p-3 p-md-4" ref={cardRef}>
+      {/* Header */}
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div>
+          {hideTitle ? null : <h4 className="mb-1">{title}</h4>}
+          <div className="text-muted small">{description}</div>
+          {count > 0 && (
+            <small className="text-muted">
               {searchQuery.trim() && filteredRows.length !== rows.length
                 ? `${filteredRows.length} of ${rows.length} on this page · ${count} total`
-                : `${count} total records`}
-            </p>
-          ) : null}
+                : rowLimit != null && isPartialLoad
+                  ? `Showing the first ${rows.length} of ${count} records`
+                  : `${count} total records`}
+            </small>
+          )}
         </div>
-        <div className="resource-page__actions">
-          <button type="button" className="btn btn-outline-primary btn-sm" onClick={load} disabled={loading}>
+        <div className="d-flex gap-2">
+          <button className="btn btn-outline-primary btn-sm" onClick={load} disabled={loading}>
             Refresh
           </button>
           {!readOnly ? (
@@ -429,11 +475,11 @@ export function ResourceCrudPage({
 
       {/* Server-side filters */}
       {filterFields?.length ? (
-        <div className="admin-h-scroll resource-page__filters rounded admin-toolbar">
-          <span className="small fw-semibold text-muted text-nowrap">Filter:</span>
+        <div className="d-flex flex-wrap align-items-center gap-3 mb-3 p-2 rounded admin-toolbar">
+          <span className="small fw-semibold text-muted">Filter:</span>
           {filterFields.map((field) => (
             <div key={field.key} className="d-flex align-items-center gap-1">
-              <label className="small text-muted mb-0 text-nowrap">{field.label}</label>
+              <label className="small text-muted mb-0">{field.label}</label>
               <select
                 className="form-select form-select-sm"
                 style={{ width: 150 }}
@@ -463,99 +509,66 @@ export function ResourceCrudPage({
         <SearchBar
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={`Search ${title.toLowerCase()}…`}
+          placeholder={
+            isServerSearch || !isPartialLoad
+              ? `Search ${title.toLowerCase()}…`
+              : `Search ${title.toLowerCase()} (loaded records only)…`
+          }
           hint={searchHint}
-          disabled={loading}
         />
       </div>
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
 
-      {/* Table */}
-      {loading ? (
-        <div className="d-flex align-items-center gap-2 text-muted py-3">
-          <div className="spinner-border spinner-border-sm" role="status" />
-          <span>Loading {title.toLowerCase()}...</span>
+      {/* Table — first load shows a spinner; later loads keep rows visible (dimmed) to avoid layout jumps */}
+      {loading && !rows.length ? (
+        <div className="d-flex align-items-center gap-2 text-muted py-3" role="status">
+          <div className="spinner-border spinner-border-sm" aria-hidden="true" />
+          <span>Loading {title.toLowerCase()}…</span>
         </div>
       ) : (
-        <DataTable
-          rows={filteredRows}
-          visibleColumns={compactColumns}
-          columnLabels={columnLabels}
-          onView={
-            typeof onViewRow === "function"
-              ? onViewRow
-              : enableRichProfileView
-                ? openRichProfile
-                : setViewingRow
-          }
-          onEdit={readOnly ? null : setEditingRow}
-          onDelete={readOnly ? null : setDeleteRow}
-          renderExtraActions={showRowExtras ? extraForRow : null}
-          sortCol={sortCol}
-          sortDir={sortDir}
-          onSort={handleSort}
-          rawColumnLabels={rawColumnLabels}
-        />
+        <div className={`admin-table-loading-wrap ${loading ? "is-loading" : ""}`} aria-busy={loading}>
+          {loading ? (
+            <div className="admin-table-loading-indicator" role="status">
+              <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+              <span className="visually-hidden">Loading…</span>
+            </div>
+          ) : null}
+          <DataTable
+            rows={filteredRows}
+            visibleColumns={compactColumns}
+            columnLabels={columnLabels}
+            rawColumnLabels={rawColumnLabels}
+            onView={
+              typeof onViewRow === "function"
+                ? onViewRow
+                : enableRichProfileView
+                  ? openRichProfile
+                  : setViewingRow
+            }
+            onEdit={readOnly ? null : setEditingRow}
+            onDelete={readOnly ? null : setDeleteRow}
+            renderExtraActions={showRowExtras ? extraForRow : null}
+            sortCol={sortCol}
+            sortDir={sortDir}
+            onSort={handleSort}
+            people={people}
+            personColumns={PERSON_COLUMNS[tableName]}
+          />
+        </div>
       )}
 
       {/* Pagination */}
-      {!loading && rowLimit == null && count > 0 ? (
-        <div className="resource-page__pager">
-          <div className="text-muted small">
-            {count > 0 ? `${rangeFrom}–${rangeTo} of ${count} records` : "No records"}
-          </div>
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <span className="text-muted small">Rows</span>
-            <select
-              className="form-select form-select-sm"
-              style={{ width: 72 }}
-              value={pageSize}
-              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page <= 1}
-              onClick={() => setPage(1)}
-            >
-              «
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              ‹
-            </button>
-            <span className="small px-1 text-nowrap">
-              Page {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              ›
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              disabled={page >= totalPages}
-              onClick={() => setPage(totalPages)}
-            >
-              »
-            </button>
-          </div>
-        </div>
+      {isPaginated && count > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          count={count}
+          onPageChange={goToPage}
+          onPageSizeChange={handlePageSizeChange}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          disabled={loading}
+        />
       ) : null}
 
       {/* Modals */}
@@ -589,7 +602,8 @@ export function ResourceCrudPage({
             ? `Restore sign-in access for "${banRow?.name || banRow?.email}".`
             : `Block all sign-in for "${banRow?.name || banRow?.email}". Prefer creator freeze unless you need a full ban.`
         }
-        confirmText={banRow?.is_frozen ? "Unban login" : "Ban login"}
+        confirmText={banRow?.is_frozen ? "Restore login" : "Ban login"}
+        variant={banRow?.is_frozen ? "primary" : "danger"}
         onCancel={() => setBanRow(null)}
         onConfirm={confirmBanLogin}
       />
@@ -609,33 +623,23 @@ export function ResourceCrudPage({
           onClose={() => {
             setViewingRow(null);
             setProfileDetail(null);
-            if (openRowId && String(viewingRow?.id) === String(openRowId)) {
-              onOpenRowHandled?.();
-            }
+            if (openRowId && String(viewingRow?.id) === String(openRowId)) onOpenRowHandled?.();
           }}
-          onBanLogin={(profile) => {
-            setBanRow(profile);
-          }}
-          onFreezeMentor={(profile) => {
-            openMentorFreeze({
-              id: profile.id,
-              name: profile.name,
-              email: profile.email,
-            });
-          }}
+          onBanLogin={(profile) => setBanRow(profile)}
+          onFreezeMentor={(profile) => openMentorFreeze({ id: profile.id, name: profile.name, email: profile.email })}
         />
       ) : (
         <RowDetailsModal
           open={Boolean(viewingRow)}
-          title={`Row details: ${tableName}`}
+          title={viewingRow?.name || viewingRow?.email ? `${viewingRow.name || viewingRow.email}` : `${title} details`}
           data={viewingRow}
           fields={detailFields}
+          people={people}
+          personColumns={PERSON_COLUMNS[tableName]}
           rawLabels={rawColumnLabels}
           onClose={() => {
             setViewingRow(null);
-            if (openRowId && String(viewingRow?.id) === String(openRowId)) {
-              onOpenRowHandled?.();
-            }
+            if (openRowId && String(viewingRow?.id) === String(openRowId)) onOpenRowHandled?.();
           }}
         />
       )}

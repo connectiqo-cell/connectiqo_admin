@@ -1,26 +1,32 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../app/providers/AuthProvider.jsx";
 import { BrandLogo } from "../../components/common/BrandLogo.jsx";
 import { useTheme } from "../../app/providers/ThemeProvider.jsx";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setError("");
+    setSubmitting(true);
     try {
       await login(email, password);
-      navigate("/");
+      const from = location.state?.from;
+      navigate(from ? `${from.pathname}${from.search || ""}` : "/", { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
+      setSubmitting(false);
     }
   };
 
@@ -57,6 +63,7 @@ export function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
+              autoFocus
               required
             />
           </div>
@@ -91,13 +98,20 @@ export function LoginPage() {
 
           {error ? (
             <div className="alert alert-danger py-2 mb-0 d-flex align-items-center gap-2" role="alert">
-              <span className="material-icons" style={{ fontSize: 20 }}>error_outline</span>
+              <span className="material-icons" style={{ fontSize: 20 }} aria-hidden="true">error_outline</span>
               <span>{error}</span>
             </div>
           ) : null}
 
-          <button type="submit" className="btn btn-primary btn-lg mt-1">
-            Sign in to Admin
+          <button type="submit" className="btn btn-primary btn-lg mt-1" disabled={submitting}>
+            {submitting ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+                Signing in…
+              </>
+            ) : (
+              "Sign in to Admin"
+            )}
           </button>
         </form>
 

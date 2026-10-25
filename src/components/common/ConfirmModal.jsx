@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import gsap from "gsap";
+import { useId, useState } from "react";
+import { useModalAnimation } from "../../hooks/useModalAnimation.js";
 
 export function ConfirmModal({
   title = "Confirm action",
@@ -10,69 +10,54 @@ export function ConfirmModal({
   confirmText = "Confirm",
   variant = "danger",
 }) {
-  const [isRendered, setIsRendered] = useState(open);
-  const backdropRef = useRef(null);
-  const dialogRef = useRef(null);
-
-  useEffect(() => {
-    if (open) {
-      setIsRendered(true);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!isRendered) return;
-    const backdrop = backdropRef.current;
-    const dialog = dialogRef.current;
-    if (!backdrop || !dialog) return;
-
-    if (open) {
-      gsap.fromTo(
-        backdrop,
-        { opacity: 0 },
-        { opacity: 1, duration: 0.22, ease: "power2.out" }
-      );
-      gsap.fromTo(
-        dialog,
-        { opacity: 0, y: 28, scale: 0.96 },
-        { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "power3.out" }
-      );
-    } else {
-      gsap.to(dialog, {
-        opacity: 0,
-        y: 18,
-        scale: 0.97,
-        duration: 0.22,
-        ease: "power2.in",
-      });
-      gsap.to(backdrop, {
-        opacity: 0,
-        duration: 0.2,
-        ease: "power2.in",
-        onComplete: () => setIsRendered(false),
-      });
-    }
-  }, [open, isRendered]);
+  const [busy, setBusy] = useState(false);
+  // While the action runs, Esc/Cancel are disabled so the modal can't close mid-request.
+  const { isRendered, backdropRef, dialogRef } = useModalAnimation(open, busy ? null : onCancel);
+  const titleId = useId();
 
   if (!isRendered) return null;
 
+  const handleConfirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onConfirm?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="modal modal-futuristic d-block" tabIndex="-1" role="dialog" ref={backdropRef}>
+    <div
+      className="modal modal-futuristic d-block"
+      tabIndex="-1"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      ref={backdropRef}
+    >
       <div className="modal-dialog modal-dialog-centered" role="document" ref={dialogRef}>
         <div className="modal-content">
           <div className="modal-header">
-            <h5 className="modal-title">{title}</h5>
-            <button type="button" className="btn-close" onClick={onCancel} />
+            <h5 className="modal-title" id={titleId}>{title}</h5>
+            <button type="button" className="btn-close" onClick={onCancel} disabled={busy} aria-label="Close" />
           </div>
           <div className="modal-body">
-            <div className="mb-0">{body}</div>
+            <p className="mb-0">{body}</p>
           </div>
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy} autoFocus>
               Cancel
             </button>
-            <button type="button" className={`btn btn-${variant}`} onClick={onConfirm}>
-              {confirmText}
+            <button type="button" className={`btn btn-${variant}`} onClick={handleConfirm} disabled={busy}>
+              {busy ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+                  Working…
+                </>
+              ) : (
+                confirmText
+              )}
             </button>
           </div>
         </div>
