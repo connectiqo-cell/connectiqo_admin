@@ -972,6 +972,50 @@ export async function updateMinWithdrawal(config, amount, operator) {
   return { ...data, min_withdrawal_amount: Number(data.min_withdrawal_amount) };
 }
 
+/**
+ * Email tracking for every creator (columns added to mentor_profiles by migration
+ * 20261025000000), with name/email and account state (login freeze, creator freeze,
+ * deleted). Emails follow the account state. Newest email activity first.
+ */
+export async function listCreatorEmailTracking(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("mentor_profiles")
+    .select(
+      "id, greeting_mail_sent, greeting_mail_sent_at, profile_completeness, open_slots_mail_count, last_open_slots_mail_at, " +
+        "mentor_frozen, mentor_frozen_until, mentor_freeze_reason"
+    );
+  if (error) throw error;
+
+  const rows = data || [];
+  const ids = rows.map((row) => row.id);
+  const { data: profiles, error: profileError } = ids.length
+    ? await supabase.from("profiles").select("id, name, email, is_frozen, deleted_at").in("id", ids)
+    : { data: [], error: null };
+  if (profileError) throw profileError;
+  const profileById = Object.fromEntries((profiles || []).map((profile) => [profile.id, profile]));
+
+  const lastActivity = (row) => Math.max(
+    Date.parse(row.greeting_mail_sent_at || 0) || 0,
+    Date.parse(row.last_open_slots_mail_at || 0) || 0
+  );
+
+  return rows
+    .map((row) => {
+      const profile = profileById[row.id];
+      return {
+        ...row,
+        name: profile?.name ?? null,
+        email: profile?.email ?? null,
+        is_frozen: Boolean(profile?.is_frozen),
+        deleted_at: profile?.deleted_at ?? null,
+        // No profile row means the account no longer exists.
+        profile_missing: !profile,
+      };
+    })
+    .sort((a, b) => lastActivity(b) - lastActivity(a) || String(a.name || "").localeCompare(String(b.name || "")));
+}
+
 export async function listDashboardStats(config) {
   const [profiles, bookings, mentorProfiles] = await Promise.all([
     listTableRows(config, "profiles", 1),
