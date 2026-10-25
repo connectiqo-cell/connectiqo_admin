@@ -44,6 +44,7 @@ export const NAV_GROUPS = [
     id: "system",
     label: "System",
     items: [
+      { to: "/email-triggers", label: "Email triggers", icon: "forward_to_inbox" },
       { to: "/database", label: "Database explorer", icon: "storage" },
       { to: "/audit-logs", label: "Audit logs", icon: "history" },
     ],

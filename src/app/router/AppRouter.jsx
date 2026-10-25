@@ -50,6 +50,7 @@ const HeroSlidesPage = page(() => import("../../features/heroSlides/HeroSlidesPa
 const SessionsPage = page(() => import("../../features/sessions/SessionsPage.jsx"), "SessionsPage");
 const RecordingsPage = page(() => import("../../features/recordings/RecordingsPage.jsx"), "RecordingsPage");
 const AuditLogPage = page(() => import("../../features/audit/AuditLogPage.jsx"), "AuditLogPage");
+const EmailTriggersPage = page(() => import("../../features/emailTriggers/EmailTriggersPage.jsx"), "EmailTriggersPage");
 
 function FullPageLoader({ label }) {
   return (
@@ -104,6 +105,7 @@ export function AppRouter() {
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="videos" element={<VideosPage />} />
         <Route path="recordings" element={<RecordingsPage />} />
+        <Route path="email-triggers" element={<EmailTriggersPage />} />
         <Route path="audit-logs" element={<AuditLogPage />} />
       </Route>
     </Routes>
