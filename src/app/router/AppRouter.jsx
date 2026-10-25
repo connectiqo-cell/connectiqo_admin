@@ -18,6 +18,7 @@ import { CategoriesPage } from "../../features/categories/CategoriesPage.jsx";
 import { HeroSlidesPage } from "../../features/heroSlides/HeroSlidesPage.jsx";
 import { ReportsPage } from "../../features/reports/ReportsPage.jsx";
 import { TrendingCreatorsPage } from "../../features/trending/TrendingCreatorsPage.jsx";
+import { AppUpdatePage } from "../../features/appConfig/AppUpdatePage.jsx";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -52,6 +53,7 @@ export function AppRouter() {
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="videos" element={<VideosPage />} />
         <Route path="recordings" element={<RecordingsPage />} />
+        <Route path="app-update" element={<AppUpdatePage />} />
         <Route path="audit-logs" element={<AuditLogPage />} />
       </Route>
     </Routes>

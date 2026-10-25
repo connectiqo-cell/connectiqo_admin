@@ -590,6 +590,14 @@ export async function listWithdrawalRequestRows(config, options = {}) {
   return { rows: enriched, count };
 }
 
+/** app_config is keyed by `key`, not `id`, so it needs its own upsert. */
+export async function saveAppConfig(config, entries) {
+  const supabase = getSupabaseClient(config);
+  const rows = Object.entries(entries).map(([key, value]) => ({ key, value: String(value) }));
+  const { error } = await supabase.from("app_config").upsert(rows, { onConflict: "key" });
+  if (error) throw error;
+}
+
 export async function createTableRow(config, tableName, payload) {
   const supabase = getSupabaseClient(config);
   const { data, error } = await supabase.from(tableName).insert(payload).select();
