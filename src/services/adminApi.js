@@ -301,17 +301,15 @@ export async function getAdminProfileDetail(config, profileId) {
   };
 }
 
-/** Uploaded mentor library videos for a user. */
+/**
+ * Uploaded mentor library videos for a user. video_url/hls_url have no
+ * direct SELECT grant for authenticated — this goes through an
+ * admin-gated RPC instead (admin_list_mentor_videos), same pattern as the
+ * web portal's viewer-facing get_*_for_viewer functions.
+ */
 export async function listMentorUploadedVideos(config, mentorId) {
   const supabase = getSupabaseClient(config);
-  const { data, error } = await supabase
-    .from("mentor_videos")
-    .select(
-      "id, mentor_id, title, description, video_url, thumbnail_url, is_free, position, created_at, storage_path"
-    )
-    .eq("mentor_id", mentorId)
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: false });
+  const { data, error } = await supabase.rpc("admin_list_mentor_videos", { p_mentor_id: mentorId });
   if (error) throw error;
   return data || [];
 }
@@ -407,15 +405,10 @@ export async function listAllMentorUploadedVideos(
   };
 }
 
+/** video_url/hls_url have no direct SELECT grant for authenticated — goes through admin_get_mentor_video instead. */
 export async function getMentorUploadedVideo(config, videoId) {
   const supabase = getSupabaseClient(config);
-  const { data, error } = await supabase
-    .from("mentor_videos")
-    .select(
-      "id, mentor_id, title, description, video_url, thumbnail_url, is_free, position, is_promoted, promoted_at, created_at, storage_path"
-    )
-    .eq("id", videoId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("admin_get_mentor_video", { p_video_id: videoId }).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Video not found");
   return data;
