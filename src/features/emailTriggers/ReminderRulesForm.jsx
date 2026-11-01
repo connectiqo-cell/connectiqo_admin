@@ -9,7 +9,7 @@ const RULE_FIELDS = [
   { key: "profile_reminder_stop_above", label: "Stop when profile is above (%)" },
 ];
 
-/** When profile reminders go out. Only creators who sign up after launch get them. */
+/** When profile reminders go out. Creators from before launch join a few a day. */
 export function ReminderRulesForm({ config, settings, environment, addLog, addToast, onSaved, onClose }) {
   const initial = Object.fromEntries(RULE_FIELDS.map(({ key }) => [key, String(settings[key])]));
   const [rules, setRules] = useState(initial);

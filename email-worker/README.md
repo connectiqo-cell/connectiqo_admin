@@ -22,7 +22,7 @@ Withdrawal/payout updates are not emailed (creators get the in-app push notifica
 |---|---|---|
 | `creator_welcome` | A creator profile is created | /mentor/profile |
 | `creator_session_booked` | A booking becomes `confirmed` (paid). Reschedules are skipped | /mentor/sessions |
-| `creator_profile_reminder` | Daily 10:00 IST: creators who joined after launch, 3+ days ago, profile not above 75%. Max 3, 3 days apart | /mentor/profile |
+| `creator_profile_reminder` | Daily 10:00 IST: creators who joined 3+ days ago, profile not above 75%. Max 3, 3 days apart. Creators from before launch join at 50 a day | /mentor/profile |
 
 Company emails (migration `20261031150000_brand_email_triggers.sql`) go to the login address:
 
@@ -60,6 +60,17 @@ after changing it. To stop sending straight away, use **Pause all emails** in th
 `DRY_RUN` only applies until migration `20261031000000_email_sending_mode.sql` is applied. With
 `DRY_RUN=false` the worker refuses to start unless `ALLOWED_RECIPIENTS` or `SEND_TO_EVERYONE=true`
 is set, so keep `DRY_RUN=true` unless you're using one of them.
+
+## Daily sending limit
+
+A Gmail account allows about 500 emails a day. Once `daily_send_limit` (default 400, in
+`email_trigger_settings`) went out in the last 24 hours, routine emails stay queued until there's
+room. Booking and campaign emails go first and aren't held back, and test emails aren't counted.
+Change it after moving to a provider with a different limit:
+
+```sql
+update public.email_trigger_settings set daily_send_limit = 400 where id;
+```
 
 ## Sender and mail server
 

@@ -14,6 +14,7 @@ const senderSettings = read("20261031120000_email_sender_settings.sql");
 const smtpLogin = read("20261031130000_email_smtp_login.sql");
 const anyProvider = read("20261031140000_email_smtp_any_provider.sql");
 const brandEmails = read("20261031150000_brand_email_triggers.sql");
+const dailyLimit = read("20261101000000_email_daily_limit_old_accounts.sql");
 const saumya = read("20261025020000_emails_follow_account_status.sql");
 // Only can_email_user() from that migration; the rest drops columns not stubbed here.
 const canEmailUser = saumya.slice(
@@ -111,6 +112,7 @@ before(async () => {
   await db.exec(smtpLogin);
   await db.exec(anyProvider);
   await db.exec(brandEmails);
+  await db.exec(dailyLimit);
   await db.exec(`update email_trigger_settings set creator_emails_enabled_at = now() - interval '30 days'`);
 });
 
@@ -159,11 +161,12 @@ test("reminder defaults: 3 times, 3 days apart, first after 3 days, stop above 7
     profile_reminder_after_days: "3",
     profile_reminder_every_days: "3",
     profile_reminder_max: "3",
+    profile_reminder_old_daily_limit: "50",
     profile_reminder_stop_above: "75",
   });
 });
 
-test("reminder eligibility: 75% cut-off, age, and creators from before launch", async () => {
+test("reminder eligibility: 75% cut-off, age, and older creators included", async () => {
   await closeQueue();
   const at70 = await creator({ daysOld: 4, completeness: 70 });
   const at80 = await creator({ daysOld: 4, completeness: 80 });
@@ -173,7 +176,7 @@ test("reminder eligibility: 75% cut-off, age, and creators from before launch", 
   assert.equal((await rowsFor("creator_profile_reminder", at70)).length, 1, "70% gets a reminder");
   assert.equal((await rowsFor("creator_profile_reminder", at80)).length, 0, "80% does not");
   assert.equal((await rowsFor("creator_profile_reminder", tooNew)).length, 0, "signed up 1 day ago");
-  assert.equal((await rowsFor("creator_profile_reminder", preLaunch)).length, 0, "signed up before launch");
+  assert.equal((await rowsFor("creator_profile_reminder", preLaunch)).length, 1, "signed up before launch");
   const [row] = await rowsFor("creator_profile_reminder", at70);
   assert.ok(row.payload.missing.includes("Profile photo"));
   await closeQueue();
@@ -553,6 +556,7 @@ test("company welcome: once per company, marks the status when sent", async () =
 test("existing companies and campaigns get nothing when the migration runs", async () => {
   await closeQueue();
   await db.exec(brandEmails);
+  await db.exec(dailyLimit);
   assert.deepEqual(await claim(), []);
 });
 
@@ -717,6 +721,77 @@ test("app users can't call the company email functions", async () => {
   assert.deepEqual(await asRole("anon", calls), { reminders: "denied", summaries: "denied" });
 });
 
+test("older creators join the reminders a few a day, closest to finished first; newer ones aren't limited", async () => {
+  await closeQueue();
+  await db.exec(`update email_outbox set status = 'failed' where template = 'creator_profile_reminder'`);
+  await db.exec(`update mentor_profiles set profile_completeness = 100`);
+  await db.exec(`update email_trigger_settings set profile_reminder_old_daily_limit = 2`);
+
+  const low = await creator({ daysOld: 60, completeness: 10 });
+  const mid = await creator({ daysOld: 60, completeness: 40 });
+  const high = await creator({ daysOld: 60, completeness: 70 });
+  const new1 = await creator({ daysOld: 4, completeness: 10 });
+  const new2 = await creator({ daysOld: 4, completeness: 20 });
+  const new3 = await creator({ daysOld: 4, completeness: 30 });
+  const count = async (id) => (await rowsFor("creator_profile_reminder", id)).length;
+
+  assert.equal((await one(`select enqueue_creator_profile_reminders() n`)).n, 5);
+  assert.deepEqual([await count(high), await count(mid), await count(low)], [1, 1, 0], "the closest to finished go first");
+  assert.deepEqual([await count(new1), await count(new2), await count(new3)], [1, 1, 1], "newer creators aren't limited");
+
+  // The next day, whoever has had none goes before anyone's second reminder.
+  await db.exec(`update email_outbox set status = 'sent', dedupe_key = dedupe_key || ':d1', created_at = created_at - interval '4 days' where template = 'creator_profile_reminder' and status = 'pending'`);
+  await q(`select enqueue_creator_profile_reminders()`);
+  assert.equal(await count(low), 1);
+
+  await db.exec(`update email_trigger_settings set profile_reminder_old_daily_limit = 0`);
+  const off = await creator({ daysOld: 60, completeness: 10 });
+  await q(`select enqueue_creator_profile_reminders()`);
+  assert.equal(await count(off), 0, "0 turns reminders for older creators off");
+  await db.exec(`update email_trigger_settings set profile_reminder_old_daily_limit = 50`);
+  await db.exec(`update mentor_profiles set profile_completeness = 100`);
+  await closeQueue();
+});
+
+test("the daily limit holds routine emails in the queue; booking and test emails still go first", async () => {
+  await closeQueue();
+  await db.exec(`update email_trigger_settings set daily_send_limit = 3`);
+  await db.exec(`update email_outbox set status = 'skipped', sent_at = null where status = 'sent'`);
+
+  const queue = async (template, id, key) =>
+    q(`select enqueue_email('creator', $1, $2, '{}'::jsonb, $3)`, [template, id, key]);
+  const ids = [];
+  for (let i = 0; i < 4; i += 1) ids.push(await creator({ completeness: 100 }));
+  await queue("creator_profile_reminder", ids[0], "limit-a");
+  await queue("creator_profile_reminder", ids[1], "limit-b");
+  await queue("creator_profile_reminder", ids[2], "limit-c");
+  await queue("creator_session_booked", ids[3], "limit-booking");
+  await q(`select admin_set_emails_paused(false)`).catch(() => {});
+  const testId = (await one(`insert into email_outbox (audience, template, to_override, is_test, dedupe_key) values ('creator', 'creator_welcome', 'me@x.com', true, 'limit-test') returning id`)).id;
+
+  const first = await claim();
+  assert.equal(first[0].id, testId, "test emails go first");
+  assert.equal(first[1].template, "creator_session_booked", "then booking emails");
+  assert.equal(first.filter((c) => c.template === "creator_profile_reminder").length, 2, "the booking takes one place, leaving room for 2 routine emails");
+  for (const row of first) await q(`select complete_email_outbox($1, true)`, [row.id]);
+
+  assert.deepEqual(await claim(), [], "the third routine email waits: the limit is reached");
+  const waiting = await q(`select status from email_outbox where dedupe_key in ('limit-a', 'limit-b', 'limit-c') and status = 'pending'`);
+  assert.equal(waiting.length, 1, "it isn't lost");
+
+  await queue("creator_session_booked", ids[0], "limit-booking-2");
+  const late = await claim();
+  assert.deepEqual(late.map((c) => c.template), ["creator_session_booked"], "booking emails still go at the limit");
+  await q(`select complete_email_outbox($1, true)`, [late[0].id]);
+
+  await db.exec(`update email_outbox set sent_at = now() - interval '25 hours' where status = 'sent'`);
+  const nextDay = await claim();
+  assert.deepEqual(nextDay.map((c) => c.template), ["creator_profile_reminder"], "it goes out when there's room again");
+
+  await db.exec(`update email_trigger_settings set daily_send_limit = 400`);
+  await closeQueue();
+});
+
 test("the migrations are safe to run twice", async () => {
   await db.exec(migration);
   await db.exec(sendingMode);
@@ -724,4 +799,5 @@ test("the migrations are safe to run twice", async () => {
   await db.exec(smtpLogin);
   await db.exec(anyProvider);
   await db.exec(brandEmails);
+  await db.exec(dailyLimit);
 });
