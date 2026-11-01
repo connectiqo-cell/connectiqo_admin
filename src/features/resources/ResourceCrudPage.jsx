@@ -23,9 +23,20 @@ import { RowDetailsModal } from "../../components/common/RowDetailsModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { Pagination } from "../../components/common/Pagination.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
+import { useOnChange, useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
 
 const EXCLUDE_FROM_CREATE = ["id", "created_at", "updated_at"];
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+const NO_FILTERS = {};
+const parseFilters = (text) => {
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export function ResourceCrudPage({
   title,
@@ -77,32 +88,32 @@ export function ResourceCrudPage({
   const [rows, setRows]             = useState([]);
   const [count, setCount]           = useState(0);
   const [people, setPeople]         = useState({});
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
 
   // Pagination
-  const [page, setPage]             = useState(1);
-  const [pageSize, setPageSize]     = useState(25);
+  const [page, setPage]             = useUrlNumber("page", 1);
+  const [pageSize, setPageSize]     = useUrlNumber("size", 25);
 
   // Sort
-  const [sortCol, setSortCol]       = useState(null);
-  const [sortDir, setSortDir]       = useState("asc");
+  const [sortCol, setSortCol]       = useUrlState("sort", null);
+  const [sortDir, setSortDir]       = useUrlState("dir", "asc", { allowed: ["asc", "desc"] });
 
   // Filters (server-side)
-  const [activeFilters, setActiveFilters] = useState({});
+  const [activeFilters, setActiveFilters] = useUrlState("filters", NO_FILTERS, { parse: parseFilters, serialize: JSON.stringify });
 
   // Search — server-side (whole table) when searchColumns is supplied, else
   // client-side (current page only, clearly labeled as such).
   const isServerSearch = Array.isArray(searchColumns) && searchColumns.length > 0;
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(handle);
   }, [searchQuery]);
 
-  useEffect(() => {
+  useOnChange(() => {
     if (isServerSearch) setPage(1);
   }, [debouncedSearch, isServerSearch]);
 
@@ -118,7 +129,7 @@ export function ResourceCrudPage({
   const [profileDetailLoading, setProfileDetailLoading] = useState(false);
 
   // Reset everything when table changes (Database Explorer)
-  useEffect(() => {
+  useOnChange(() => {
     setPage(1);
     setSortCol(null);
     setSortDir("asc");
@@ -435,7 +446,7 @@ export function ResourceCrudPage({
   // e.g. deleting the last row on the last page: step back instead of showing an empty page.
   useEffect(() => {
     if (!loading && page > totalPages) setPage(totalPages);
-  }, [loading, page, totalPages]);
+  }, [loading, page, totalPages, setPage]);
 
   const goToPage = (next) => {
     setPage(next);

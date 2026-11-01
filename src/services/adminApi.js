@@ -217,13 +217,19 @@ export async function fetchProfilesByIds(config, ids) {
   if (!uniqueIds.length) return {};
 
   const supabase = getSupabaseClient(config);
-  const { data: profiles, error } = await supabase
-    .from("profiles")
-    .select("id, name, email")
-    .in("id", uniqueIds);
+  // The ids go in the URL, so a long list is fetched in batches.
+  const batches = [];
+  for (let i = 0; i < uniqueIds.length; i += 100) batches.push(uniqueIds.slice(i, i + 100));
+  const results = await Promise.all(
+    batches.map((batch) => supabase.from("profiles").select("id, name, email").in("id", batch))
+  );
 
-  if (error) throw error;
-  return Object.fromEntries((profiles || []).map((profile) => [profile.id, profile]));
+  const profiles = [];
+  for (const { data, error } of results) {
+    if (error) throw error;
+    profiles.push(...(data || []));
+  }
+  return Object.fromEntries(profiles.map((profile) => [profile.id, profile]));
 }
 
 export async function getTableRowById(config, tableName, id) {
@@ -736,6 +742,14 @@ export async function listWithdrawalRequestRows(config, options = {}) {
   return { rows: enriched, count };
 }
 
+/** app_config as { key: value }. Kept out of ALLOWED_TABLES so Database Explorer can't edit it. */
+export async function getAppConfig(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase.from("app_config").select("key, value");
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((row) => [row.key, row.value]));
+}
+
 /** app_config is keyed by `key`, not `id`, so it needs its own upsert. */
 export async function saveAppConfig(config, entries) {
   const supabase = getSupabaseClient(config);
@@ -1024,6 +1038,66 @@ export async function listCreatorEmailTracking(config) {
     .sort((a, b) => lastActivity(b) - lastActivity(a) || String(a.name || "").localeCompare(String(b.name || "")));
 }
 
+/** One row per company with its account state and what it has been emailed. Newest first. */
+export async function listCompanyEmailTracking(config) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("brand_profiles")
+    .select("id, company_name, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const rows = data || [];
+  const ids = rows.map((row) => row.id);
+  // The ids go in the URL, so a long list is fetched in batches.
+  const fetchForCompanies = async (table, columns, idColumn, narrow = (query) => query) => {
+    const batches = [];
+    for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));
+    const results = await Promise.all(
+      batches.map((batch) => narrow(supabase.from(table).select(columns).in(idColumn, batch)))
+    );
+    return results.flatMap((result) => {
+      if (result.error) throw result.error;
+      return result.data || [];
+    });
+  };
+
+  const [profiles, statuses, launched, reminders, unsubscribed] = await Promise.all([
+    fetchForCompanies("profiles", "id, name, email, is_frozen, deleted_at", "id"),
+    fetchForCompanies("brand_email_status", "company_id, greeting_mail_sent, greeting_mail_sent_at", "company_id"),
+    // Same rule as the reminder: a draft doesn't count as launched.
+    fetchForCompanies("campaigns", "brand_id", "brand_id", (query) => query.neq("status", "draft")),
+    fetchForCompanies("email_outbox", "recipient_id, sent_at", "recipient_id", (query) =>
+      query.eq("template", "brand_campaign_reminder").eq("status", "sent")
+    ),
+    fetchForCompanies("email_preferences", "user_id", "user_id", (query) => query.not("unsubscribed_at", "is", null)),
+  ]);
+
+  const profileById = Object.fromEntries(profiles.map((profile) => [profile.id, profile]));
+  const statusById = Object.fromEntries(statuses.map((status) => [status.company_id, status]));
+  const launchedIds = new Set(launched.map((campaign) => campaign.brand_id));
+  const unsubscribedIds = new Set(unsubscribed.map((preference) => preference.user_id));
+
+  return rows.map((row) => {
+    const profile = profileById[row.id];
+    const sentReminders = reminders.filter((reminder) => reminder.recipient_id === row.id);
+    return {
+      id: row.id,
+      name: row.company_name || profile?.name || null,
+      email: profile?.email ?? null,
+      is_frozen: Boolean(profile?.is_frozen),
+      deleted_at: profile?.deleted_at ?? null,
+      profile_missing: !profile,
+      greeting_mail_sent: Boolean(statusById[row.id]?.greeting_mail_sent),
+      greeting_mail_sent_at: statusById[row.id]?.greeting_mail_sent_at ?? null,
+      campaign_launched: launchedIds.has(row.id),
+      reminders_sent: sentReminders.length,
+      last_reminder_at: sentReminders.map((reminder) => reminder.sent_at).sort().at(-1) ?? null,
+      unsubscribed: unsubscribedIds.has(row.id),
+    };
+  });
+}
+
 export async function listDashboardStats(config) {
   const [profiles, bookings, mentorProfiles] = await Promise.all([
     listTableRows(config, "profiles", 1),
@@ -1072,6 +1146,146 @@ export async function listAppSessionRecordings(config, { limit = 200 } = {}) {
     mentor_name: profileById[row.mentor_id]?.name ?? null,
     learner_name: profileById[row.learner_id]?.name ?? null,
   }));
+}
+
+// 42P01 = undefined table (Postgres); PGRST205 = table not in PostgREST schema cache.
+const isMissingTable = (error) => error?.code === "42P01" || error?.code === "PGRST205";
+
+/**
+ * Everything the Email triggers page needs to show (migration 20261026000000).
+ * Returns null when the migration hasn't been applied yet.
+ */
+export async function getEmailControl(config) {
+  const supabase = getSupabaseClient(config);
+  const [settings, templates, worker] = await Promise.all([
+    supabase.from("email_trigger_settings").select("*").eq("id", true).maybeSingle(),
+    supabase.from("email_templates").select("*"),
+    supabase.from("email_worker_status").select("*").eq("id", true).maybeSingle(),
+  ]);
+  for (const { error } of [settings, templates, worker]) {
+    if (isMissingTable(error)) return null;
+    if (error) throw error;
+  }
+  const countByStatus = async (status, since) => {
+    let query = supabase.from("email_outbox").select("id", { count: "exact", head: true }).eq("status", status);
+    if (since) query = query.gte("created_at", since);
+    const { count, error } = await query;
+    if (error) throw error;
+    return count || 0;
+  };
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const countUnsubscribed = async () => {
+    const { count, error } = await supabase
+      .from("email_preferences")
+      .select("user_id", { count: "exact", head: true })
+      .not("unsubscribed_at", "is", null);
+    if (error) throw error;
+    return count || 0;
+  };
+  const [waiting, failed, sentToday, unsubscribed] = await Promise.all([
+    countByStatus("pending"),
+    countByStatus("failed"),
+    countByStatus("sent", dayAgo),
+    countUnsubscribed(),
+  ]);
+  return {
+    settings: settings.data,
+    templates: templates.data || [],
+    worker: worker.data,
+    counts: { waiting, failed, sentToday, unsubscribed },
+  };
+}
+
+/** Text overrides and on/off for one email type. Admin only (RLS). */
+export async function updateEmailTemplate(config, template, changes, operator) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from("email_templates")
+    .update({ ...changes, updated_at: new Date().toISOString(), updated_by: operator || null })
+    .eq("template", template)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  // RLS silently matches zero rows for non-admins instead of erroring.
+  if (!data) throw new Error("Not saved: your account isn't allowed to change email templates.");
+  return data;
+}
+
+/** Reminder rules. Admin only (RLS). */
+export async function updateEmailSettings(config, changes) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase.from("email_trigger_settings").update(changes).eq("id", true).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Not saved: your account isn't allowed to change email settings.");
+  return data;
+}
+
+/** Emergency stop / resume. Returns how many waiting emails were discarded. */
+export async function setEmailsPaused(config, { paused, discardWaiting = false, operator }) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase.rpc("admin_set_emails_paused", {
+    p_paused: paused,
+    p_discard_waiting: discardWaiting,
+    p_operator: operator || null,
+  });
+  if (error) throw error;
+  return data || 0;
+}
+
+/** Saves the mail server and its login in Vault, encrypted. They can be replaced here, never read back. */
+export async function setEmailSmtp(config, { host, port, user, password, operator }) {
+  const supabase = getSupabaseClient(config);
+  const { error } = await supabase.rpc("admin_set_email_smtp", {
+    p_host: host,
+    p_port: port,
+    p_user: user,
+    p_password: password,
+    p_operator: operator || null,
+  });
+  if (error) throw error;
+}
+
+/** Queue a test email with draft text. It goes to the given address, even in test mode. */
+export async function queueTestEmail(config, { template, to, payload, overrides }) {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase.rpc("admin_queue_test_email", {
+    p_template: template,
+    p_to: to,
+    p_payload: payload || {},
+    p_overrides: overrides || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Newest emails first, with the recipient's name/email. Returns null before the migration. */
+export async function listEmailOutbox(config, { status = "all", limit = 200 } = {}) {
+  const supabase = getSupabaseClient(config);
+  let query = supabase
+    .from("email_outbox")
+    .select("id, audience, template, recipient_id, to_override, is_test, status, attempts, last_error, send_after, sent_at, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (status !== "all") query = query.eq("status", status);
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  const rows = data || [];
+  const people = await fetchProfilesByIds(config, rows.map((row) => row.recipient_id)).catch(() => ({}));
+  return rows.map((row) => ({
+    ...row,
+    recipient_name: people[row.recipient_id]?.name ?? null,
+    recipient_email: row.to_override || people[row.recipient_id]?.email || null,
+  }));
+}
+
+/** Queue a failed or skipped email again (admin only, via admin_retry_email). */
+export async function retryEmail(config, id) {
+  const supabase = getSupabaseClient(config);
+  const { error } = await supabase.rpc("admin_retry_email", { p_id: id });
+  if (error) throw error;
 }
 
 /** Recent bookings that have (or had) a VideoSDK meeting — admin sessions fallback. */

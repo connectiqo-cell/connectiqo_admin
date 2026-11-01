@@ -10,6 +10,8 @@ import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { MinWithdrawalCard } from "./MinWithdrawalCard.jsx";
+import { useOnChange, useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
+import { formatDateTime } from "../../utils/formatters.js";
 
 // Admin auth here is a hardcoded email/password check, not real Supabase auth
 // (see AuthProvider.jsx) — the service-role key is what actually authorizes
@@ -65,7 +67,7 @@ function timeAgo(iso) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatDateTime(iso);
 }
 
 function notifyMentor(config, withdrawalRequestId, status) {
@@ -121,10 +123,10 @@ export function WithdrawalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
-  const [activeTab, setActiveTab] = useState("queue");
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("date_desc");
-  const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useUrlState("tab", "queue", { allowed: STATUS_TABS.map((tab) => tab.key) });
+  const [search, setSearch] = useUrlState("q", "");
+  const [sortBy, setSortBy] = useUrlState("sort", "date_desc");
+  const [page, setPage] = useUrlNumber("page", 1);
 
   const [processingConfirmRow, setProcessingConfirmRow] = useState(null);
   const [fulfilRow, setFulfilRow] = useState(null);
@@ -149,9 +151,7 @@ export function WithdrawalsPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [activeTab, search, sortBy]);
+  useOnChange(() => setPage(1), [activeTab, search, sortBy]);
 
   const kpis = useMemo(() => {
     const now = loadedAt;
@@ -563,7 +563,7 @@ function WithdrawalRow({ row, busy, onCopy, onMarkProcessing, onFulfil, onReject
               {row.status === "completed" ? (
                 <>
                   Paid via {row.payout_method?.toUpperCase() || "—"} · Ref {row.payout_reference || "—"} ·{" "}
-                  {row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"} · by {row.processed_by || "—"}
+                  {formatDateTime(row.paid_at)} · by {row.processed_by || "—"}
                 </>
               ) : (
                 <>

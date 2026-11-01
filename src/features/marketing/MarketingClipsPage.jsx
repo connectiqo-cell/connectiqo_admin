@@ -39,7 +39,7 @@ export function MarketingClipsPage() {
       const { rows: data } = await listTableRows(config, "home_marketing_clips", 200);
       setRows(data || []);
     } catch (err) {
-      setError(err.message || "Failed to load clips (run migration 006 if table is missing).");
+      setError(err.message || "Could not load the clips. Try again.");
     } finally {
       setLoading(false);
     }

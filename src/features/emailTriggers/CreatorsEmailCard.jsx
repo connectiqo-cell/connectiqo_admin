@@ -5,11 +5,12 @@ import { PaginationBar, paginateRows } from "../../components/common/PaginationB
 import { listCreatorEmailTracking } from "../../services/adminApi.js";
 import { formatDateTime } from "../../utils/formatters.js";
 import { accountStatus, filterCreatorRows, summarizeCreatorRows } from "./creatorEmailTracking.js";
+import { useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
 
 const GREETING_FILTERS = [
-  { key: "all", label: "All greetings" },
-  { key: "sent", label: "Greeting sent" },
-  { key: "not_sent", label: "Greeting not sent" },
+  { key: "all", label: "All welcome emails" },
+  { key: "sent", label: "Welcome email sent" },
+  { key: "not_sent", label: "Welcome email not sent" },
 ];
 
 const ACCOUNT_FILTERS = [
@@ -63,11 +64,11 @@ export function CreatorsEmailCard() {
   const [state, setState] = useState("loading"); // loading | ready | error
   const [loadError, setLoadError] = useState("");
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
-  const [query, setQuery] = useState("");
-  const [greeting, setGreeting] = useState("all");
-  const [account, setAccount] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [query, setQuery] = useUrlState("creator_q", "");
+  const [greeting, setGreeting] = useUrlState("creator_welcome", "all", { allowed: GREETING_FILTERS.map((f) => f.key) });
+  const [account, setAccount] = useUrlState("creator_status", "all", { allowed: ACCOUNT_FILTERS.map((f) => f.key) });
+  const [page, setPage] = useUrlNumber("creator_page", 1);
+  const [pageSize, setPageSize] = useUrlNumber("creator_size", 10);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -120,9 +121,9 @@ export function CreatorsEmailCard() {
         <span className="text-muted">·</span>
         <span><strong>{summary.deleted}</strong> deleted</span>
         <span className="text-muted">·</span>
-        <span><strong>{summary.greetingSent}</strong> greeted</span>
+        <span><strong>{summary.greetingSent}</strong> welcome emails sent</span>
         <span className="text-muted">·</span>
-        <span><strong>{summary.sessionMails}</strong> session booked mails sent</span>
+        <span><strong>{summary.sessionMails}</strong> session booked emails sent</span>
         <span className="ms-auto text-muted d-flex align-items-center gap-2">
           {state === "ready" ? `Updated ${formatDateTime(new Date(loadedAt).toISOString())}` : null}
           <button type="button" className="btn btn-sm btn-outline-secondary" onClick={load} disabled={state === "loading"}>
@@ -142,7 +143,7 @@ export function CreatorsEmailCard() {
         <select className="form-select" style={{ maxWidth: 220 }} value={account} onChange={resetPage(setAccount)} aria-label="Filter by account status">
           {ACCOUNT_FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
         </select>
-        <select className="form-select" style={{ maxWidth: 200 }} value={greeting} onChange={resetPage(setGreeting)} aria-label="Filter by greeting mail">
+        <select className="form-select" style={{ maxWidth: 200 }} value={greeting} onChange={resetPage(setGreeting)} aria-label="Filter by welcome email">
           {GREETING_FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
         </select>
       </div>
@@ -160,9 +161,9 @@ export function CreatorsEmailCard() {
                 <tr>
                   <th>Creator</th>
                   <th>Status</th>
-                  <th>Greeting mail</th>
+                  <th>Welcome email</th>
                   <th>Profile completeness</th>
-                  <th className="text-center">Session booked mails</th>
+                  <th className="text-center">Session booked emails</th>
                 </tr>
               </thead>
               <tbody>

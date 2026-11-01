@@ -7,3 +7,10 @@ dist-ssr
 .vscode
 .idea
 README.md
+
+# The admin preview imports email-worker/src/templates.js, so that code is needed for the
+# build, but the worker's secrets (Gmail App Password) must never enter the admin site image.
+email-worker/.env
+email-worker/.env.*
+email-worker/node_modules
+email-worker/test

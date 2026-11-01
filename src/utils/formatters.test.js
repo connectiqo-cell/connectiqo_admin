@@ -9,6 +9,7 @@ import {
   inferKind,
   shortId,
   statusTone,
+  formatDuration,
 } from "./formatters.js";
 
 const UUID = "3f2a91bc-1234-4abc-9def-0123456789ab";
@@ -103,4 +104,16 @@ describe("badges", () => {
 
 it("shortens ids to 8 characters", () => {
   expect(shortId(UUID)).toBe("3f2a91bc");
+});
+
+describe("formatDuration", () => {
+  it("reads like a length of time", () => {
+    expect(formatDuration(9.4)).toBe("9s");
+    expect(formatDuration(125)).toBe("2m 05s");
+    expect(formatDuration(3725)).toBe("1h 02m 05s");
+    expect(formatDuration(0)).toBe("0s");
+  });
+  it("shows a dash when unknown", () => {
+    for (const value of [null, undefined, "", "abc", -5]) expect(formatDuration(value)).toBe("—");
+  });
 });

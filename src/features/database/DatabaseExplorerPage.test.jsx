@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
+import { BrowserRouter } from "react-router-dom";
 import { installFakeSupabase, TEST_CONFIG, withIds } from "../../test/fakeSupabase.js";
 import { ALLOWED_TABLES } from "../../services/adminApi.js";
 
@@ -44,6 +45,9 @@ afterEach(() => {
 });
 
 const tableButton = (name) => screen.getByRole("button", { name, pressed: false });
+
+const render = (ui) => rtlRender(<BrowserRouter>{ui}</BrowserRouter>);
+afterEach(() => window.history.replaceState(null, "", "/"));
 
 describe("DatabaseExplorerPage", () => {
   it("offers exactly the allow-listed tables", () => {

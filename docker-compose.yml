@@ -5,3 +5,12 @@ services:
     ports:
       - "3003:3003"
     restart: unless-stopped
+
+  # Sends the automatic emails queued in Supabase (see email-worker/README.md).
+  # No ports: it only makes outbound connections (Supabase + Gmail SMTP).
+  email-worker:
+    build: ./email-worker
+    container_name: connectiqo-email-worker
+    env_file: ./email-worker/.env
+    restart: unless-stopped
+    stop_grace_period: 30s

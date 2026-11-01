@@ -147,6 +147,19 @@ export function formatTime(value) {
   return new Date(2000, 0, 1, h, min).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+/** 125 → "2m 05s", 3725 → "1h 02m 05s", 9.4 → "9s" */
+export function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || seconds === "") return "—";
+  const n = Math.round(Number(seconds));
+  if (!Number.isFinite(n) || n < 0) return "—";
+  const pad = (value) => String(value).padStart(2, "0");
+  const hours = Math.floor(n / 3600);
+  const minutes = Math.floor((n % 3600) / 60);
+  const rest = n % 60;
+  if (hours) return `${hours}h ${pad(minutes)}m ${pad(rest)}s`;
+  return minutes ? `${minutes}m ${pad(rest)}s` : `${rest}s`;
+}
+
 /** "Just now", "5 min ago", "3 days ago" — for tooltips next to absolute dates. */
 export function formatRelative(value) {
   const d = new Date(value);
@@ -175,8 +188,8 @@ export function shortId(value) {
 /** Badge colour for a status word. */
 export function statusTone(status) {
   const s = String(status || "").toLowerCase();
-  if (/^(paid|completed|complete|approved|active|success|succeeded|verified|confirmed|done|processed)$/.test(s)) return "success";
-  if (/^(pending|created|initiated|processing|scheduled|unpaid|requested|in_progress|awaiting)$/.test(s)) return "warning";
+  if (/^(paid|completed|complete|approved|active|success|succeeded|verified|confirmed|done|processed|sent)$/.test(s)) return "success";
+  if (/^(pending|created|initiated|processing|scheduled|unpaid|requested|in_progress|awaiting|sending)$/.test(s)) return "warning";
   if (/^(failed|rejected|cancelled|canceled|declined|expired|error|frozen|blocked)$/.test(s)) return "danger";
   if (/^(refunded|rescheduled|reversed|ongoing|live|started)$/.test(s)) return "info";
   return "neutral";

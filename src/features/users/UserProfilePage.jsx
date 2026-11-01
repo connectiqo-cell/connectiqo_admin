@@ -21,6 +21,7 @@ import { RecordingPlayerModal } from "../../components/common/RecordingPlayerMod
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { roleDisplayLabel } from "../../utils/displayLabels.js";
+import { useUrlState } from "../../hooks/useUrlState.js";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -85,7 +86,7 @@ export function UserProfilePage() {
   const { session } = useAuth();
   const operator = session?.user?.email || session?.email || "admin";
 
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useUrlState("tab", "overview", { allowed: TABS.map((item) => item.key) });
   const [detail, setDetail] = useState(null);
   const [uploads, setUploads] = useState([]);
   const [recordings, setRecordings] = useState([]);

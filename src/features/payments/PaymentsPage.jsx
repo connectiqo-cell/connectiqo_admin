@@ -8,6 +8,7 @@ import { useToast } from "../../app/providers/ToastProvider.jsx";
 import { Badge } from "../../components/common/CellValue.jsx";
 import { formatInr, statusTone } from "../../utils/formatters.js";
 import { TransactionStatusModal, TX_STATUSES } from "./TransactionStatusModal.jsx";
+import { RESOURCE_URL_KEYS, useClearUrlKeys, useUrlState } from "../../hooks/useUrlState.js";
 
 const PAYMENT_RESOURCES = [
   {
@@ -142,7 +143,8 @@ export function PaymentsPage() {
   const { config, environment } = useEnvironment();
   const { addLog } = useAudit();
   const { addToast } = useToast();
-  const [active, setActive] = useState(PAYMENT_RESOURCES[0].id);
+  const [active, setActive] = useUrlState("records", PAYMENT_RESOURCES[0].id, { allowed: PAYMENT_RESOURCES.map((item) => item.id) });
+  const clearUrlKeys = useClearUrlKeys();
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState("");
@@ -258,7 +260,10 @@ export function PaymentsPage() {
             role="tab"
             aria-selected={active === item.id}
             className={`payments-tab ${active === item.id ? "is-active" : ""}`}
-            onClick={() => setActive(item.id)}
+            onClick={() => {
+              clearUrlKeys(RESOURCE_URL_KEYS);
+              setActive(item.id);
+            }}
           >
             {item.label}
           </button>

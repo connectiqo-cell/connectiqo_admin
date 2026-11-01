@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { HScroll } from "./HScroll.jsx";
+import { formatDateTime } from "../../utils/formatters.js";
 
 const PRESETS = [
   { key: "7d", label: "7 days", days: 7 },
@@ -80,7 +81,7 @@ export function MentorFreezeModal({
                 <>
                   <strong>{name}</strong> is currently frozen as a creator
                   {row.mentor_frozen_until
-                    ? ` until ${new Date(row.mentor_frozen_until).toLocaleString()}`
+                    ? ` until ${formatDateTime(row.mentor_frozen_until)}`
                     : " indefinitely"}
                   . They can still book sessions and watch videos. Unfreeze to restore their creator profile and videos.
                 </>

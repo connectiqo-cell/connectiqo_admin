@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ResourceCrudPage } from "../resources/ResourceCrudPage.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { ALLOWED_TABLES, TABLE_SEARCH_COLUMNS } from "../../services/adminApi.js";
+import { RESOURCE_URL_KEYS, useClearUrlKeys, useUrlState } from "../../hooks/useUrlState.js";
 
 const SELECTABLE_TABLES = [...ALLOWED_TABLES].sort();
 
@@ -24,8 +25,9 @@ function searchDescription(tableName) {
 }
 
 export function DatabaseExplorerPage() {
-  const [query, setQuery] = useState("");
-  const [tableName, setTableName] = useState("profiles");
+  const [query, setQuery] = useUrlState("tables", "");
+  const [tableName, setTableName] = useUrlState("table", "profiles");
+  const clearUrlKeys = useClearUrlKeys();
 
   const visibleTables = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/\s+/g, "_");
@@ -54,7 +56,10 @@ export function DatabaseExplorerPage() {
               key={table}
               type="button"
               className={`btn btn-sm ${tableName === table ? "btn-primary" : "btn-outline-secondary"}`}
-              onClick={() => setTableName(table)}
+              onClick={() => {
+                clearUrlKeys(RESOURCE_URL_KEYS);
+                setTableName(table);
+              }}
               aria-pressed={tableName === table}
             >
               {table}

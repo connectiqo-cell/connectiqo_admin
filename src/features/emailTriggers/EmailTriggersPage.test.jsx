@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
+import { BrowserRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ listCreatorEmailTracking: vi.fn() }));
+const api = vi.hoisted(() => ({ listCreatorEmailTracking: vi.fn(), getEmailControl: vi.fn() }));
 
 vi.mock("../../services/adminApi.js", () => api);
 vi.mock("../../app/providers/EnvironmentProvider.jsx", () => ({ useEnvironment: () => ({ config: {}, environment: "production" }) }));
+vi.mock("../../app/providers/AuditProvider.jsx", () => ({ useAudit: () => ({ addLog: vi.fn() }) }));
+vi.mock("../../app/providers/ToastProvider.jsx", () => ({ useToast: () => ({ addToast: vi.fn() }) }));
+vi.mock("../../app/providers/AuthProvider.jsx", () => ({ useAuth: () => ({ session: { user: { email: "admin@x.co" } } }) }));
 
 import { EmailTriggersPage } from "./EmailTriggersPage.jsx";
 
@@ -17,37 +21,53 @@ const creators = [
   { ...base, id: "d", name: "Dev Deleted", email: "dev@x.co", deleted_at: "2026-10-01T00:00:00Z" },
 ];
 
-function openCreators() {
+async function openCreators() {
   render(<EmailTriggersPage />);
-  fireEvent.click(screen.getByRole("button", { name: /Creators/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Creators" }));
 }
 
 const rowFor = async (name) => (await screen.findByText(name)).closest("tr");
 
+const render = (ui) => rtlRender(<BrowserRouter>{ui}</BrowserRouter>);
+afterEach(() => window.history.replaceState(null, "", "/"));
+
 describe("EmailTriggersPage", () => {
   beforeEach(() => {
     api.listCreatorEmailTracking.mockResolvedValue(creators);
+    api.getEmailControl.mockResolvedValue({
+      settings: { emails_paused: false },
+      templates: [],
+      worker: null,
+      counts: { waiting: 0, failed: 0, sentToday: 0 },
+    });
   });
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
   });
 
-  it("starts collapsed and loads creators only when opened", async () => {
+  it("loads creators only when their tab is opened", async () => {
     render(<EmailTriggersPage />);
+    const tab = await screen.findByRole("tab", { name: "Creators" });
     expect(api.listCreatorEmailTracking).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /Creators/ }));
+    fireEvent.click(tab);
+    expect(await screen.findByText("Asha Rao")).toBeTruthy();
+  });
+
+  it("still lists creators before the migration is applied", async () => {
+    api.getEmailControl.mockResolvedValue(null);
+    render(<EmailTriggersPage />);
     expect(await screen.findByText("Asha Rao")).toBeTruthy();
   });
 
   it("shows an empty state with no creators", async () => {
     api.listCreatorEmailTracking.mockResolvedValue([]);
-    openCreators();
+    await openCreators();
     expect(await screen.findByText("No creators yet.")).toBeTruthy();
   });
 
   it("shows one status per creator, saying when emails stop", async () => {
-    openCreators();
+    await openCreators();
     const active = await rowFor("Asha Rao");
     expect(within(active).getByText("Active")).toBeTruthy();
     expect(within(active).queryByText(/No emails/)).toBeNull();
@@ -57,13 +77,13 @@ describe("EmailTriggersPage", () => {
   });
 
   it("has no separate email freeze/stop buttons", async () => {
-    openCreators();
+    await openCreators();
     await screen.findByText("Asha Rao");
     expect(screen.queryByRole("button", { name: /Freeze|Stop|Unfreeze|Reactivate/ })).toBeNull();
   });
 
   it("filters to frozen accounts", async () => {
-    openCreators();
+    await openCreators();
     await screen.findByText("Asha Rao");
     fireEvent.change(screen.getByLabelText("Filter by account status"), { target: { value: "frozen" } });
     expect(screen.queryByText("Asha Rao")).toBeNull();

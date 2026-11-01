@@ -2709,3 +2709,97 @@ body[data-theme="dark"] .payments-kpi--warning .dashboard-kpi-chip { color: #fbb
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
+
+/* ─── Email control ──────────────────────────────────────────────────────── */
+.email-status {
+  --email-tone: var(--admin-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--email-tone) 35%, var(--admin-border));
+  border-radius: var(--admin-radius-sm);
+  background: color-mix(in srgb, var(--email-tone) 9%, transparent);
+}
+
+.email-status--warning { --email-tone: #d97706; }
+.email-status--danger  { --email-tone: #ef4444; }
+.email-status--success { --email-tone: #16a34a; }
+
+/* Text stays beside its icon or switch on phones; only the buttons wrap below. */
+.email-row-text {
+  flex: 1 1 0;
+  min-width: 12rem;
+}
+
+.email-status__icon {
+  color: var(--email-tone);
+  font-size: 22px !important;
+}
+
+.email-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.email-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  background: transparent;
+  color: var(--admin-text);
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.email-count:hover {
+  background: var(--admin-surface-2);
+}
+
+.email-count:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+}
+
+.email-count__value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.email-type-row__panel {
+  flex-basis: 100%;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--admin-border);
+}
+
+.email-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+}
+
+.email-preview {
+  display: block;
+  width: 100%;
+  height: 460px;
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  background: #f4f4f7;
+}
+
+.table td.email-log-details {
+  min-width: 180px;
+  max-width: 320px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

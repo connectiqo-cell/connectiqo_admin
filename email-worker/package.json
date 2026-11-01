@@ -1,0 +1,22 @@
+{
+  "name": "connectiqo-email-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sends Connectiqo's automatic emails queued in the Supabase email_outbox table.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "send-test": "node --env-file-if-exists=.env scripts/send-test.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.104.0",
+    "nodemailer": "9.1.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
+  }
+}

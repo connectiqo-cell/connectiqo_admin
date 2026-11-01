@@ -11,19 +11,22 @@ import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { PaginationBar, paginateRows } from "../../components/common/PaginationBar.jsx";
 import { HScroll } from "../../components/common/HScroll.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
+import { useOnChange, useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
+import { CellValue } from "../../components/common/CellValue.jsx";
+import { formatDateTime } from "../../utils/formatters.js";
 
 export function SessionsPage() {
   const { config } = useEnvironment();
   const [sdkRows, setSdkRows] = useState([]);
   const [appRows, setAppRows] = useState([]);
-  const [source, setSource] = useState("app");
+  const [source, setSource] = useUrlState("source", "app", { allowed: ["app", "sdk"] });
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
   const [viewingRow, setViewingRow] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
+  const [page, setPage] = useUrlNumber("page", 1);
+  const [pageSize, setPageSize] = useUrlNumber("size", 25);
   const [sdkLoading, setSdkLoading] = useState(false);
   const [sdkLoaded, setSdkLoaded] = useState(false);
 
@@ -50,9 +53,7 @@ export function SessionsPage() {
 
   const searchHint = getSearchResultHint(filteredRows.length, activeRows.length, searchQuery);
 
-  useEffect(() => {
-    setPage(1);
-  }, [source, searchQuery, pageSize]);
+  useOnChange(() => setPage(1), [source, searchQuery, pageSize]);
 
   const loadApp = useCallback(async () => {
     setLoading(true);
@@ -192,9 +193,9 @@ export function SessionsPage() {
                     <td>{row.mentor_name || "—"}</td>
                     <td>{row.learner_name || "—"}</td>
                     <td>
-                      <span className="badge rounded-pill text-bg-secondary">{row.status || "—"}</span>
+                      <CellValue kind="status" value={row.status} />
                     </td>
-                    <td>{row.start ? new Date(row.start).toLocaleString() : "—"}</td>
+                    <td>{formatDateTime(row.start)}</td>
                     <td>
                       <div className="btn-group btn-group-sm">
                         <button

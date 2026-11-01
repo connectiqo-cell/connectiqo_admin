@@ -14,6 +14,8 @@ import { RecordingPlayerModal } from "../../components/common/RecordingPlayerMod
 import { PaginationBar } from "../../components/common/PaginationBar.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
+import { useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
+import { formatDateTime } from "../../utils/formatters.js";
 
 const emptyEdit = {
   title: "",
@@ -31,10 +33,10 @@ export function VideosPage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [appliedSearch, setAppliedSearch] = useUrlState("q", "");
+  const [searchQuery, setSearchQuery] = useState(appliedSearch);
+  const [page, setPage] = useUrlNumber("page", 1);
+  const [pageSize, setPageSize] = useUrlNumber("size", 25);
 
   const [playTarget, setPlayTarget] = useState(null);
   const [playLoadingId, setPlayLoadingId] = useState(null);
@@ -127,7 +129,7 @@ export function VideosPage() {
       setEditTarget(null);
       await load();
     } catch (err) {
-      setError(err.message || "Update failed — run mentor_videos promote migration if needed");
+      setError(err.message || "Could not update the video. Try again.");
     } finally {
       setSaving(false);
     }
@@ -171,7 +173,7 @@ export function VideosPage() {
       if (playTarget?.id === deleteTarget.id) setPlayTarget(null);
       await load();
     } catch (err) {
-      setError(err.message || "Delete failed — run mentor_videos admin migration if needed");
+      setError(err.message || "Could not delete the video. Try again.");
       setDeleteTarget(null);
     }
   };
@@ -301,7 +303,7 @@ export function VideosPage() {
                           )}
                         </td>
                         <td className="small text-muted">
-                          {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                          {formatDateTime(row.created_at)}
                         </td>
                         <td>
                           <div className="btn-group btn-group-sm">

@@ -15,6 +15,8 @@ import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { MentorFreezeModal } from "../../components/common/MentorFreezeModal.jsx";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { useOnChange, useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
+import { formatDateTime, shortId } from "../../utils/formatters.js";
 
 const STATUS_BADGE = {
   pending: "bg-warning-subtle text-warning-emphasis",
@@ -88,7 +90,7 @@ function timeAgo(iso) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatDateTime(iso);
 }
 
 function formatReason(reason) {
@@ -147,12 +149,12 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
-  const [contextSection, setContextSection] = useState("all");
-  const [activeTab, setActiveTab] = useState("queue");
-  const [search, setSearch] = useState("");
-  const [reasonFilter, setReasonFilter] = useState("all");
+  const [contextSection, setContextSection] = useUrlState("section", "all", { allowed: CONTEXT_SECTIONS.map((section) => section.key) });
+  const [activeTab, setActiveTab] = useUrlState("tab", "queue", { allowed: STATUS_TABS.map((tab) => tab.key) });
+  const [search, setSearch] = useUrlState("q", "");
+  const [reasonFilter, setReasonFilter] = useUrlState("reason", "all");
   const [focusUserId, setFocusUserId] = useState(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useUrlNumber("page", 1);
 
   const [statusConfirm, setStatusConfirm] = useState(null);
   const [freezeTarget, setFreezeTarget] = useState(null);
@@ -175,9 +177,7 @@ export function ReportsPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [activeTab, search, reasonFilter, contextSection, focusUserId]);
+  useOnChange(() => setPage(1), [activeTab, search, reasonFilter, contextSection, focusUserId]);
 
   const contextCounts = useMemo(() => {
     const counts = { all: rows.length, profile: 0, video: 0, booking: 0, call: 0 };
@@ -856,7 +856,7 @@ function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismi
               <div className="small text-muted mb-1">Context</div>
               <div className="small">
                 {CONTEXT_LABELS[ctx] || ctx}
-                {row.context_id ? ` · ${row.context_id}` : ""}
+                {row.context_id ? ` · ${shortId(row.context_id)}` : ""}
               </div>
               {row.context_id ? (
                 <div className="mt-2 d-flex flex-wrap gap-2">
@@ -875,7 +875,7 @@ function ReportRow({ row, busy, onCopy, onMarkReviewing, onMarkActioned, onDismi
             </div>
             <div className="col-12 col-md-6">
               <div className="small text-muted mb-1">Submitted</div>
-              <div className="small">{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</div>
+              <div className="small">{formatDateTime(row.created_at)}</div>
             </div>
           </div>
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { listTableRows, saveAppConfig } from "../../services/adminApi.js";
+import { getAppConfig, saveAppConfig } from "../../services/adminApi.js";
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
 
@@ -9,7 +9,8 @@ export function AppUpdatePage() {
   const { config } = useEnvironment();
   const { addToast } = useToast();
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded]   = useState(false);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState("");
 
@@ -20,14 +21,15 @@ export function AppUpdatePage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setLoaded(false);
     try {
-      const result = await listTableRows(config, "app_config", { limit: 500 });
-      const value = (key) => (result.rows || []).find((r) => r.key === key)?.value;
-      setMinAndroid(value("min_android_version") ?? "0");
-      setMinIos(value("min_ios_version") ?? "0");
-      setMessage(value("update_message") || DEFAULT_MESSAGE);
+      const values = await getAppConfig(config);
+      setMinAndroid(values.min_android_version ?? "0");
+      setMinIos(values.min_ios_version ?? "0");
+      setMessage(values.update_message || DEFAULT_MESSAGE);
+      setLoaded(true);
     } catch (err) {
-      setError(err.message || "Failed to load app config.");
+      setError(err.message || "Could not load the force update settings.");
     } finally {
       setLoading(false);
     }
@@ -67,12 +69,18 @@ export function AppUpdatePage() {
         {error   ? <div className="alert alert-danger">{error}</div> : null}
         {loading ? <div className="d-flex align-items-center gap-2 text-muted"><div className="spinner-border spinner-border-sm" />Loading...</div> : null}
 
-        {!loading && (
+        {/* Without the saved values, Save could overwrite them with these defaults. */}
+        {!loading && !loaded ? (
+          <button className="btn btn-outline-secondary" onClick={load}>Retry</button>
+        ) : null}
+
+        {!loading && loaded && (
           <>
             <div className="row g-3">
               <div className="col-12 col-sm-4">
-                <label className="form-label fw-semibold">Minimum Android versionCode</label>
+                <label htmlFor="min-android" className="form-label fw-semibold">Minimum Android versionCode</label>
                 <input
+                  id="min-android"
                   type="number"
                   className="form-control"
                   min="0"
@@ -84,8 +92,9 @@ export function AppUpdatePage() {
               </div>
 
               <div className="col-12 col-sm-4">
-                <label className="form-label fw-semibold">Minimum iOS build number</label>
+                <label htmlFor="min-ios" className="form-label fw-semibold">Minimum iOS build number</label>
                 <input
+                  id="min-ios"
                   type="number"
                   className="form-control"
                   min="0"
@@ -97,8 +106,9 @@ export function AppUpdatePage() {
               </div>
 
               <div className="col-12">
-                <label className="form-label fw-semibold">Message shown to users</label>
+                <label htmlFor="update-message" className="form-label fw-semibold">Message shown to users</label>
                 <textarea
+                  id="update-message"
                   className="form-control"
                   rows={2}
                   value={message}

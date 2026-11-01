@@ -14,6 +14,7 @@ import { useToast } from "../../app/providers/ToastProvider.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+import { useUrlState } from "../../hooks/useUrlState.js";
 
 const MAX_UPLOAD_MB = 5;
 
@@ -231,7 +232,7 @@ export function HeroSlidesPage() {
   const [uploading, setUploading] = useState(false);
   const [editSlide, setEditSlide] = useState(null);
   const [deleteSlide, setDeleteSlide] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
   const [togglingId, setTogglingId] = useState(null);
 
   const filteredSlides = useMemo(

@@ -12,6 +12,9 @@ import { RecordingPlayerModal } from "../../components/common/RecordingPlayerMod
 import { PaginationBar, paginateRows } from "../../components/common/PaginationBar.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { getRecordingStatus, getRecordingStatusBadgeClass } from "../../utils/recording.js";
+import { useOnChange, useUrlNumber, useUrlState } from "../../hooks/useUrlState.js";
+import { IdValue } from "../../components/common/CellValue.jsx";
+import { formatDuration } from "../../utils/formatters.js";
 
 export function RecordingsPage() {
   const { config, environment } = useEnvironment();
@@ -22,9 +25,9 @@ export function RecordingsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [playTarget, setPlayTarget] = useState(null);
   const [playLoadingId, setPlayLoadingId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
+  const [page, setPage] = useUrlNumber("page", 1);
+  const [pageSize, setPageSize] = useUrlNumber("size", 25);
 
   const filteredRows = useMemo(
     () =>
@@ -39,9 +42,7 @@ export function RecordingsPage() {
 
   const searchHint = getSearchResultHint(filteredRows.length, rows.length, searchQuery);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
+  useOnChange(() => setPage(1), [searchQuery, pageSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -157,9 +158,7 @@ export function RecordingsPage() {
 
                     return (
                       <tr key={row.id}>
-                        <td className="text-truncate" style={{ maxWidth: 140 }} title={row.id}>
-                          {row.id}
-                        </td>
+                        <td><IdValue value={row.id} /></td>
                         <td>{row.roomId || "—"}</td>
                         <td>
                           <span className={`badge rounded-pill ${getRecordingStatusBadgeClass(status)}`}>
@@ -167,7 +166,7 @@ export function RecordingsPage() {
                           </span>
                         </td>
                         <td>
-                          {duration != null ? `${Number(duration).toFixed(1)}s` : "—"}
+                          {formatDuration(duration)}
                         </td>
                         <td>
                           <div className="btn-group btn-group-sm">

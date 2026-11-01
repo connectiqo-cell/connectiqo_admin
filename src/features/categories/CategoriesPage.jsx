@@ -12,6 +12,7 @@ import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
 import { SearchBar } from "../../components/common/SearchBar.jsx";
 import { filterRowsBySearch, getSearchResultHint } from "../../utils/searchUtils.js";
 import { useModalAnimation } from "../../hooks/useModalAnimation.js";
+import { useUrlState } from "../../hooks/useUrlState.js";
 
 // ─── Slug helper ────────────────────────────────────────────────────────────
 const toSlug = (name) =>
@@ -323,7 +324,7 @@ export function CategoriesPage() {
   const [rows, setRows]         = useState([]);
   const [count, setCount]       = useState(0);
   const [loading, setLoading]   = useState(false);
-  const [search, setSearch]     = useState("");
+  const [search, setSearch]     = useUrlState("q", "");
   const [editRow, setEditRow]   = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteRow, setDeleteRow]   = useState(null);

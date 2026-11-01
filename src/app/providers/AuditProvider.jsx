@@ -5,7 +5,7 @@ import { getSupabaseClient } from "../../services/supabaseClientFactory.js";
 
 const AuditContext = createContext(null);
 const AUDIT_TABLE = "audit_logs";
-const MAX_LOGS = 200;
+const MAX_LOGS = 1000;
 
 function toClientLog(row) {
   return {
@@ -69,7 +69,7 @@ export function AuditProvider({ children }) {
     [config, session]
   );
 
-  const value = useMemo(() => ({ logs, addLog }), [logs, addLog]);
+  const value = useMemo(() => ({ logs, addLog, maxLogs: MAX_LOGS }), [logs, addLog]);
   return <AuditContext.Provider value={value}>{children}</AuditContext.Provider>;
 }
 

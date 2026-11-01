@@ -9,11 +9,11 @@ import {
 import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
+import { useUrlState } from "../../hooks/useUrlState.js";
 
 /** Must match mentorApi.getTrendingMentors(8) on the app Welcome screen. */
 const WELCOME_SLOTS = 8;
 
-const MIGRATION_HINT = "run 20261013100000_trending_mentors.sql if needed";
 
 export function TrendingCreatorsPage() {
   const { config, environment } = useEnvironment();
@@ -24,7 +24,7 @@ export function TrendingCreatorsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useUrlState("q", "");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,7 +33,7 @@ export function TrendingCreatorsPage() {
       setRows(await getTrendingBoard(config));
     } catch (err) {
       setRows([]);
-      setError(`${err.message || "Failed to load trending board"} — ${MIGRATION_HINT}`);
+      setError(err.message || "Could not load the trending board. Try again.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +85,7 @@ export function TrendingCreatorsPage() {
       addToast(toast);
       await load();
     } catch (err) {
-      setError(`${err.message || "Update failed"} — ${MIGRATION_HINT}`);
+      setError(err.message || "Could not save the change. Try again.");
     } finally {
       setBusyId(null);
     }

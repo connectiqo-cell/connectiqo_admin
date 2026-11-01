@@ -8,6 +8,7 @@ import { useEnvironment } from "../../app/providers/EnvironmentProvider.jsx";
 import { useToast } from "../../app/providers/ToastProvider.jsx";
 import { useAudit } from "../../app/providers/AuditProvider.jsx";
 import { ConfirmModal } from "../../components/common/ConfirmModal.jsx";
+import { formatDateTime } from "../../utils/formatters.js";
 
 function validatePercent(raw, label) {
   if (String(raw).trim() === "") return `${label} is required.`;
@@ -175,7 +176,7 @@ export function PlatformFeesPage() {
                       Unsaved changes · saved: {savedFee}% fee, {savedGst}% GST
                     </span>
                   ) : globalRule?.updated_at || globalRule?.created_at ? (
-                    `Last saved ${new Date(globalRule.updated_at || globalRule.created_at).toLocaleString()}`
+                    `Last saved ${formatDateTime(globalRule.updated_at || globalRule.created_at)}`
                   ) : globalRule ? (
                     "Rates are saved"
                   ) : (
