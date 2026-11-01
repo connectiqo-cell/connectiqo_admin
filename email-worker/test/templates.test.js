@@ -183,3 +183,10 @@ test("company emails: right link, wording and footer", () => {
   assert.equal(many.subject, "You have 5 new applications");
   assert.ok(!many.html.includes("by campaign"));
 });
+
+test("a session ending at midnight shows its end time", () => {
+  assert.equal(formatTime("24:00:00"), "12:00 am");
+  assert.equal(formatTime("24:30:00"), null);
+  const email = renderEmail("creator_session_booked", { booked_by_name: "Ravi", date: "2026-11-04", start_time: "23:30:00", end_time: "24:00:00" }, ctx);
+  assert.ok(email.text.includes("When: Wed, 4 Nov 2026, 11:30 pm – 12:00 am"));
+});

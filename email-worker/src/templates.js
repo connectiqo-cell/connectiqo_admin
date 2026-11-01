@@ -209,9 +209,10 @@ export function formatDate(value) {
   return `${WEEKDAYS[date.getUTCDay()]}, ${d} ${MONTHS[m - 1]} ${y}`;
 }
 
-/** "14:30:00" → "2:30 pm" */
+/** "14:30:00" → "2:30 pm"; "24:00:00" (a slot ending at midnight) → "12:00 am" */
 export function formatTime(value) {
-  const [h, min] = String(value || "").split(":").map(Number);
+  const [parsedHour, min] = String(value || "").split(":").map(Number);
+  const h = parsedHour === 24 && min === 0 ? 0 : parsedHour;
   if (!Number.isInteger(h) || !Number.isInteger(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
   return `${h % 12 || 12}:${String(min).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
 }
