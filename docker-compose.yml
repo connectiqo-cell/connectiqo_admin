@@ -3,7 +3,8 @@ services:
     build: .
     container_name: connectiqo-admin
     ports:
-      - "3003:3003"
+      # Localhost only: Caddy on this VPS is the public entry point, with HTTPS.
+      - "127.0.0.1:3003:3003"
     restart: unless-stopped
 
   # Sends the automatic emails queued in Supabase (see email-worker/README.md).
